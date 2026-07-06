@@ -292,8 +292,7 @@ with st.container(border=True):
         st.markdown("### Valor do sobreaviso")
 
         st.caption(
-            "Valor configurado na aba `outros_valores`, "
-            "na descrição `valor_sobreaviso`."
+            "Valor definido em cofigurações -> outros valores"
         )
 
     with coluna_valor:
