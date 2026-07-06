@@ -1,2 +1,6 @@
-streamlit
+streamlit>=1.36
 pandas
+gspread
+gspread-dataframe
+google-auth
+python-dotenv
