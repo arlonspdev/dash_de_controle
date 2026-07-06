@@ -279,35 +279,7 @@ if not nomes_medicos:
 
 
 # ============================================================
-# Seleção do período do sobreaviso
-# ============================================================
-
-tipo_sobreaviso = st.radio(
-    "Período do sobreaviso",
-    options=[
-        "12h",
-        "24h",
-    ],
-    horizontal=True,
-    key=f"tipo_sobreaviso_{versao_formulario}",
-)
-
-
-multiplicador_sobreaviso = (
-    2
-    if tipo_sobreaviso == "24h"
-    else 1
-)
-
-
-valor_sobreaviso_final = (
-    valor_sobreaviso_12h
-    * multiplicador_sobreaviso
-)
-
-
-# ============================================================
-# Resumo do valor
+# Valor base do sobreaviso
 # ============================================================
 
 with st.container(border=True):
@@ -317,19 +289,16 @@ with st.container(border=True):
     )
 
     with coluna_texto:
-        st.markdown(
-            f"### Valor do sobreaviso {tipo_sobreaviso}"
-        )
+        st.markdown("### Valor do sobreaviso 12h")
 
         st.caption(
-            "Valor definido em Configurações → Outros valores. "
-            "Para 24h, o valor de 12h é multiplicado por 2."
+            "Valor definido em Configurações → Outros valores."
         )
 
     with coluna_valor:
         st.metric(
             "Valor",
-            formatar_moeda(valor_sobreaviso_final),
+            formatar_moeda(valor_sobreaviso_12h),
         )
 
 
@@ -343,7 +312,9 @@ with st.container(border=True):
     with st.form(
         key=f"formulario_sobreaviso_{versao_formulario}"
     ):
-        coluna_data, coluna_medico = st.columns(2)
+        coluna_data, coluna_medico, coluna_periodo = st.columns(
+            [1, 2, 1]
+        )
 
         with coluna_data:
             data_sobreaviso = st.date_input(
@@ -358,6 +329,16 @@ with st.container(border=True):
                 options=nomes_medicos,
                 index=None,
                 placeholder="Selecione um médico",
+            )
+
+        with coluna_periodo:
+            tipo_sobreaviso = st.selectbox(
+                "Período",
+                options=[
+                    "12h",
+                    "24h",
+                ],
+                index=0,
             )
 
         salvar_sobreaviso = st.form_submit_button(
@@ -378,6 +359,17 @@ if salvar_sobreaviso:
         )
 
     else:
+        multiplicador_sobreaviso = (
+            2
+            if tipo_sobreaviso == "24h"
+            else 1
+        )
+
+        valor_sobreaviso_final = (
+            valor_sobreaviso_12h
+            * multiplicador_sobreaviso
+        )
+
         # Ordem das colunas em base_sobreaviso:
         #
         # data
