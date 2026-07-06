@@ -159,9 +159,15 @@ with st.sidebar:
 
 pag_inserir_dados = st.Page(
     "views/inserir_dados_page.py",
-    title="Inserir dados",
+    title="Inserir Procedimentos e Exames",
     icon="📋",
     default=True,
+)
+
+pag_inserir_sobreaviso = st.Page(
+    "views/inserir_sobreaviso.py",
+    title="Inserir Sobreaviso",
+    icon="📟",
 )
 
 pag_configuracao = st.Page(
