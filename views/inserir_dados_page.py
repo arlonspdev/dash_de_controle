@@ -472,7 +472,7 @@ with st.container(border=True):
 
         st.divider()
 
-        coluna_valor_exame, coluna_taxa, coluna_valor_medico = st.columns(3)
+        coluna_valor_exame, coluna_valor_medico, coluna_taxa = st.columns(3)
 
         with coluna_valor_exame:
             st.metric(
