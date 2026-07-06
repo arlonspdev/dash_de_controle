@@ -166,7 +166,7 @@ st.subheader(base_selecionada)
 
 st.caption(
     "Você pode alterar células, adicionar novas linhas ou excluir "
-    "linhas. As alterações só serão enviadas ao Google Sheets "
+    "linhas. As alterações só serão enviadas à base "
     "quando você clicar em salvar."
 )
 

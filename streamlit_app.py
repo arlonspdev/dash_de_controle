@@ -15,15 +15,24 @@ pag_inserir_dados = st.Page(
 
 pag_configuracao = st.Page(
     "views/configuracao_page.py",
-    title="Configuração",
+    title="Configurar e Editar Bases de Dados",
     icon="⚙️",
+)
+
+pag_controle_financeiro = st.Page(
+    "views/controle_financeiro_page.py",
+    title="Controle Financeiro - Dia",
+    icon="💰",
 )
 
 paginas = {
     "Inserir Dados": [
         pag_inserir_dados
     ],
-    "Configuração": [
+    "Controle Financeiro": [
+        pag_controle_financeiro
+    ],
+    "Configurações": [
         pag_configuracao
     ]
 }  
