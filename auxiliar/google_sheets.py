@@ -115,11 +115,11 @@ def _get_spreadsheet_id(
     """
     Return a supplied spreadsheet ID or the default ID from secrets.
     """
-    resolved_id = spreadsheet_id or _get_setting("SPREADSHEET_ID_2")
+    resolved_id = spreadsheet_id or _get_setting("SPREADSHEET_ID")
 
     if not resolved_id:
         raise RuntimeError(
-            "The SPREADSHEET_ID_2 secret was not configured."
+            "The SPREADSHEET_ID secret was not configured."
         )
 
     return str(resolved_id)
