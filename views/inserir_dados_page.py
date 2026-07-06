@@ -560,6 +560,8 @@ if salvar_dados:
             "versao_formulario_atendimento"
         ] += 1
 
+        st.toast("Dados salvos com sucesso!", icon="😍")
+
         st.rerun()
 
     except Exception as error:
