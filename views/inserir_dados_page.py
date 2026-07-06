@@ -62,13 +62,11 @@ def converter_para_float(valor) -> float:
 
     texto = re.sub(r"[R$\s]", "", texto)
 
-    # Exemplo brasileiro: 1.234,56
     if "," in texto and "." in texto:
         if texto.rfind(",") > texto.rfind("."):
             texto = texto.replace(".", "")
             texto = texto.replace(",", ".")
         else:
-            # Exemplo internacional: 1,234.56
             texto = texto.replace(",", "")
 
     elif "," in texto:
@@ -127,7 +125,7 @@ def obter_lista_unica(
     nome_coluna: str,
 ) -> list[str]:
     """
-    Retorna os valores preenchidos e únicos de uma coluna,
+    Retorna valores preenchidos e únicos de uma coluna,
     preservando a ordem da planilha.
     """
     valores = (
@@ -142,24 +140,14 @@ def obter_lista_unica(
     return valores.drop_duplicates().tolist()
 
 
-def obter_outro_valor(
+def obter_taxa_aparelho(
     dataframe: pd.DataFrame,
-    descricoes_possiveis: list[str],
 ) -> tuple[float, bool]:
     """
-    Procura uma descrição na aba outros_valores.
-
-    Retorna:
-        valor encontrado;
-        indicador informando se a descrição foi encontrada.
+    Busca a descrição taxa_aparelho na aba outros_valores.
     """
     if dataframe.empty:
         return 0.0, False
-
-    descricoes_normalizadas = {
-        normalizar_texto(descricao)
-        for descricao in descricoes_possiveis
-    }
 
     base = dataframe.copy()
 
@@ -170,7 +158,7 @@ def obter_outro_valor(
     )
 
     resultado = base.loc[
-        base["descricao_normalizada"].isin(descricoes_normalizadas)
+        base["descricao_normalizada"].eq("taxa aparelho")
     ]
 
     if resultado.empty:
@@ -225,23 +213,7 @@ with st.container(border=True):
         )
 
 
-coluna_descricao, coluna_atualizar = st.columns(
-    [5, 1],
-    vertical_alignment="center",
-)
-
-with coluna_descricao:
-    st.subheader("Inserir novo atendimento")
-
-with coluna_atualizar:
-    atualizar_listas = st.button(
-        "🔄 Atualizar listas",
-        use_container_width=True,
-    )
-
-if atualizar_listas:
-    get_sheet_data.clear()
-    st.rerun()
+st.subheader("Inserir novo atendimento")
 
 
 # ============================================================
@@ -268,7 +240,7 @@ except Exception as error:
     st.stop()
 
 
-# Remove espaços acidentais nos nomes das colunas.
+# Remove espaços acidentais dos nomes das colunas.
 lista_exames_df.columns = (
     lista_exames_df.columns
     .astype(str)
@@ -350,26 +322,19 @@ if not nomes_exames:
 
 
 # ============================================================
-# Valores adicionais
+# Taxa do aparelho
 # ============================================================
 
-taxa_aparelho, encontrou_taxa_aparelho = obter_outro_valor(
-    outros_valores_df,
-    [
-        "taxa_aparelho",
-        "taxa aparelho",
-        "taxa do aparelho",
-    ],
+taxa_aparelho, encontrou_taxa_aparelho = obter_taxa_aparelho(
+    outros_valores_df
 )
 
-valor_sobreaviso, encontrou_sobreaviso = obter_outro_valor(
-    outros_valores_df,
-    [
-        "valor_sobreaviso",
-        "valor sobreaviso",
-        "sobreaviso",
-    ],
-)
+
+if not encontrou_taxa_aparelho:
+    st.warning(
+        "A descrição `taxa_aparelho` não foi encontrada na aba "
+        "`outros_valores`. O sistema utilizará R$ 0,00."
+    )
 
 
 # ============================================================
@@ -424,12 +389,13 @@ with st.container(border=True):
 
 
 # ============================================================
-# Localiza os valores do exame selecionado
+# Valores do exame selecionado
 # ============================================================
 
 valor_exame = 0.0
 valor_medico = 0.0
 exame_encontrado = False
+
 
 if nome_exame:
     exame_selecionado_df = lista_exames_df.loc[
@@ -506,7 +472,7 @@ with st.container(border=True):
 
         st.divider()
 
-        coluna_valor_exame, coluna_valor_medico = st.columns(2)
+        coluna_valor_exame, coluna_taxa, coluna_valor_medico = st.columns(3)
 
         with coluna_valor_exame:
             st.metric(
@@ -514,44 +480,17 @@ with st.container(border=True):
                 formatar_moeda(valor_exame),
             )
 
+        with coluna_taxa:
+            st.metric(
+                "Taxa do aparelho",
+                formatar_moeda(taxa_aparelho),
+            )
+
         with coluna_valor_medico:
             st.metric(
                 "Valor recebido pelo médico",
                 formatar_moeda(valor_medico),
             )
-
-        with st.expander("Ver outros valores do registro"):
-            coluna_taxa, coluna_sobreaviso = st.columns(2)
-
-            with coluna_taxa:
-                st.metric(
-                    "Taxa do aparelho",
-                    formatar_moeda(taxa_aparelho),
-                )
-
-            with coluna_sobreaviso:
-                st.metric(
-                    "Valor de sobreaviso",
-                    formatar_moeda(valor_sobreaviso),
-                )
-
-
-# ============================================================
-# Alertas sobre outros valores
-# ============================================================
-
-if not encontrou_taxa_aparelho:
-    st.warning(
-        "A descrição `taxa_aparelho` não foi encontrada na aba "
-        "`outros_valores`. O sistema utilizará R$ 0,00."
-    )
-
-
-if not encontrou_sobreaviso:
-    st.warning(
-        "A descrição `valor_sobreaviso` não foi encontrada na aba "
-        "`outros_valores`. O sistema utilizará R$ 0,00."
-    )
 
 
 # ============================================================
@@ -581,7 +520,7 @@ if salvar_dados:
     numero_atendimento_limpo = numero_atendimento.strip()
     nome_paciente_limpo = nome_paciente.strip()
 
-    # A ordem precisa ser a mesma das colunas da aba base_dados:
+    # Ordem das colunas da aba base_dados:
     #
     # data
     # numero_atendimento
@@ -591,7 +530,6 @@ if salvar_dados:
     # valor_exame
     # taxa_aparelho
     # valor_medico
-    # valor_sobreaviso
 
     nova_linha = [
         data_atendimento.strftime("%d/%m/%Y"),
@@ -602,7 +540,6 @@ if salvar_dados:
         valor_exame,
         taxa_aparelho,
         valor_medico,
-        valor_sobreaviso,
     ]
 
     try:
@@ -619,7 +556,6 @@ if salvar_dados:
             f"de {nome_paciente_limpo} salvo com sucesso."
         )
 
-        # Altera as chaves dos widgets para limpar os campos.
         st.session_state[
             "versao_formulario_atendimento"
         ] += 1
