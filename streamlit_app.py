@@ -25,12 +25,19 @@ pag_controle_financeiro = st.Page(
     icon="💰",
 )
 
+pag_controle_medico = st.Page(
+    "views/controle_medico_page.py",
+    title="Controle Financeiro - Médico",
+    icon="🩺",
+)
+
 paginas = {
     "Inserir Dados": [
         pag_inserir_dados
     ],
     "Controle Financeiro": [
-        pag_controle_financeiro
+        pag_controle_financeiro,
+        pag_controle_medico
     ],
     "Configurações": [
         pag_configuracao
