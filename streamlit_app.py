@@ -196,6 +196,7 @@ pag_controle_medico = st.Page(
 paginas = {
     "Inserir Dados": [
         pag_inserir_dados,
+        pag_inserir_sobreaviso,
     ],
     "Controle Financeiro": [
         pag_controle_financeiro,
