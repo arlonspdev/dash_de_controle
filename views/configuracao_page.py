@@ -10,6 +10,14 @@ from auxiliar.google_sheets import (
 )
 
 
+URL_PLANILHA = (
+    "https://docs.google.com/spreadsheets/d/"
+    "17xaXorvF3eyiPKU-4SkWGL2WW8rBB2cmRTrr_PJdCNk/"
+)
+
+EMAIL_EDICAO_PLANILHA = "arlonspdev@gmail.com"
+
+
 BASES_DISPONIVEIS = {
     "Médicos": {
         "aba": "lista_medicos",
@@ -472,6 +480,66 @@ def exibir_tabela_validacao(
     )
 
 
+@st.dialog(
+    "Editar diretamente na planilha",
+    width="large",
+)
+def exibir_dialogo_planilha() -> None:
+    """
+    Exibe orientações e o link para edição direta
+    no Google Sheets.
+    """
+    st.markdown(
+        "### 📊 Edição pelo Google Sheets"
+    )
+
+    st.info(
+        "A forma recomendada de editar os dados é pela tabela "
+        "disponível nesta página. Utilize a planilha diretamente "
+        "apenas quando precisar realizar alterações mais amplas "
+        "ou específicas."
+    )
+
+    st.markdown(
+        "Você também pode acessar e editar os dados diretamente "
+        "na planilha do sistema."
+    )
+
+    st.warning(
+        "⚠️ Antes de abrir a planilha, verifique a conta do "
+        "Google que está conectada no navegador."
+    )
+
+    with st.container(border=True):
+        st.markdown(
+            "#### Conta necessária para edição"
+        )
+
+        st.markdown(
+            f"Você precisa estar conectado com o e-mail "
+            f"**{EMAIL_EDICAO_PLANILHA}**."
+        )
+
+        st.caption(
+            "Caso esteja conectado com outro e-mail, a planilha "
+            "pode aparecer somente para visualização ou o acesso "
+            "pode ser negado."
+        )
+
+    st.error(
+        "Tome cuidado ao alterar nomes de abas, títulos de colunas "
+        "ou a ordem das colunas. Essas mudanças podem impedir o "
+        "funcionamento correto do sistema."
+    )
+
+    st.link_button(
+        "🔗 Abrir planilha no Google Sheets",
+        URL_PLANILHA,
+        type="primary",
+        use_container_width=True,
+    )
+
+
 # ============================================================
 # Mensagem após salvar
 # ============================================================
@@ -741,6 +809,31 @@ if salvar_alteracoes:
 
 
 # ============================================================
+# Edição alternativa pelo Google Sheets
+# ============================================================
+
+st.caption(
+    "Precisa realizar uma alteração mais ampla? "
+    "Existe uma opção alternativa de edição."
+)
+
+coluna_espaco, coluna_editar_planilha = st.columns(
+    [3, 1]
+)
+
+with coluna_editar_planilha:
+    abrir_planilha = st.button(
+        "📊 Editar na planilha",
+        type="secondary",
+        use_container_width=True,
+    )
+
+
+if abrir_planilha:
+    exibir_dialogo_planilha()
+
+
+# ============================================================
 # Validação dos sobreavisos
 # ============================================================
 
@@ -818,4 +911,3 @@ if nome_aba == "base_sobreaviso":
                 "Nenhum médico possui mais de 24 horas de "
                 "sobreaviso no mesmo dia."
             )
-
