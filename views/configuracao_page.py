@@ -56,6 +56,9 @@ def limpar_dataframe(
         for coluna in dataframe.columns
     ]
 
+    if dataframe.empty:
+        return dataframe.reset_index(drop=True)
+
     linhas_preenchidas = dataframe.apply(
         lambda linha: any(
             pd.notna(valor)
@@ -97,7 +100,7 @@ def converter_para_float(valor) -> float:
     """
     Converte valores numéricos e monetários para float.
 
-    Exemplos:
+    Exemplos aceitos:
         100
         100.50
         "100,50"
@@ -122,10 +125,12 @@ def converter_para_float(valor) -> float:
 
     if "," in texto and "." in texto:
         if texto.rfind(",") > texto.rfind("."):
+            # Formato brasileiro: 1.234,56
             texto = texto.replace(".", "")
             texto = texto.replace(",", ".")
 
         else:
+            # Formato internacional: 1,234.56
             texto = texto.replace(",", "")
 
     elif "," in texto:
@@ -259,13 +264,12 @@ def obter_valor_sobreaviso_12h(
 def analisar_erros_sobreaviso(
     dataframe: pd.DataFrame,
     valor_sobreaviso_12h: float,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> pd.DataFrame:
     """
     Agrupa os registros de sobreaviso por data e médico.
 
-    Retorna:
-        resumo completo por dia e médico;
-        apenas registros com mais de 24h.
+    Retorna somente os dias em que o valor total ultrapassa
+    o equivalente a 24 horas de sobreaviso.
     """
     colunas_resultado = [
         "Data",
@@ -276,12 +280,12 @@ def analisar_erros_sobreaviso(
         "Valor excedente",
     ]
 
-    if dataframe.empty:
-        vazio = pd.DataFrame(
-            columns=colunas_resultado
-        )
+    dataframe_vazio = pd.DataFrame(
+        columns=colunas_resultado
+    )
 
-        return vazio, vazio.copy()
+    if dataframe.empty:
+        return dataframe_vazio
 
     colunas_obrigatorias = {
         "data",
@@ -300,6 +304,12 @@ def analisar_erros_sobreaviso(
             + ", ".join(sorted(colunas_ausentes))
         )
 
+    if valor_sobreaviso_12h <= 0:
+        raise ValueError(
+            "O valor de 12h do sobreaviso precisa ser maior "
+            "que zero para realizar a validação."
+        )
+
     base = dataframe.copy()
 
     base["medico"] = (
@@ -314,6 +324,7 @@ def analisar_erros_sobreaviso(
     )
 
     valores_convertidos = []
+    valores_validos = []
 
     for valor in base["valor"]:
         try:
@@ -321,23 +332,23 @@ def analisar_erros_sobreaviso(
                 converter_para_float(valor)
             )
 
+            valores_validos.append(True)
+
         except (TypeError, ValueError):
-            valores_convertidos.append(float("nan"))
+            valores_convertidos.append(0.0)
+            valores_validos.append(False)
 
     base["valor_convertido"] = valores_convertidos
+    base["valor_valido"] = valores_validos
 
     base = base.loc[
         base["data_convertida"].notna()
         & base["medico"].ne("")
-        & base["valor_convertido"].notna()
+        & base["valor_valido"]
     ].copy()
 
     if base.empty:
-        vazio = pd.DataFrame(
-            columns=colunas_resultado
-        )
-
-        return vazio, vazio.copy()
+        return dataframe_vazio
 
     resumo = (
         base
@@ -353,24 +364,16 @@ def analisar_erros_sobreaviso(
                 "valor_convertido",
                 "sum",
             ),
-            quantidade_registros=(
-                "valor_convertido",
-                "size",
-            ),
         )
     )
 
     limite_24h = valor_sobreaviso_12h * 2
 
-    if valor_sobreaviso_12h > 0:
-        resumo["horas_estimadas"] = (
-            resumo["valor_total"]
-            / valor_sobreaviso_12h
-            * 12
-        )
-
-    else:
-        resumo["horas_estimadas"] = 0.0
+    resumo["horas_estimadas"] = (
+        resumo["valor_total"]
+        / valor_sobreaviso_12h
+        * 12
+    )
 
     resumo["limite_24h"] = limite_24h
 
@@ -384,14 +387,21 @@ def analisar_erros_sobreaviso(
         > limite_24h + 0.01
     )
 
-    resumo = resumo.sort_values(
+    erros = resumo.loc[
+        resumo["possui_erro"]
+    ].copy()
+
+    if erros.empty:
+        return dataframe_vazio
+
+    erros = erros.sort_values(
         [
             "data_convertida",
             "medico",
         ]
-    )
+    ).reset_index(drop=True)
 
-    resumo_exibicao = resumo.rename(
+    erros = erros.rename(
         columns={
             "data_convertida": "Data",
             "medico": "Médico",
@@ -402,17 +412,55 @@ def analisar_erros_sobreaviso(
         }
     )
 
-    resumo_exibicao["Data"] = (
-        resumo_exibicao["Data"].dt.date
-    )
+    erros["Data"] = erros["Data"].dt.date
 
-    erros_exibicao = resumo_exibicao.loc[
-        resumo["possui_erro"].values
-    ].copy()
+    return erros[colunas_resultado]
 
-    return (
-        resumo_exibicao[colunas_resultado],
-        erros_exibicao[colunas_resultado],
+
+def exibir_tabela_validacao(
+    dataframe: pd.DataFrame,
+) -> None:
+    """
+    Exibe a tabela com os dias de sobreaviso que possuem erro.
+    """
+    st.dataframe(
+        dataframe,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Data": st.column_config.DateColumn(
+                "Data",
+                format="DD/MM/YYYY",
+            ),
+            "Médico": st.column_config.TextColumn(
+                "Médico",
+                width="large",
+            ),
+            "Valor total": (
+                st.column_config.NumberColumn(
+                    "Valor total",
+                    format="R$ %.2f",
+                )
+            ),
+            "Horas estimadas": (
+                st.column_config.NumberColumn(
+                    "Horas estimadas",
+                    format="%.0f h",
+                )
+            ),
+            "Limite de 24h": (
+                st.column_config.NumberColumn(
+                    "Limite de 24h",
+                    format="R$ %.2f",
+                )
+            ),
+            "Valor excedente": (
+                st.column_config.NumberColumn(
+                    "Valor excedente",
+                    format="R$ %.2f",
+                )
+            ),
+        },
     )
 
 
@@ -578,13 +626,15 @@ with coluna_aba:
 
 
 # ============================================================
-# Verificação dos sobreavisos
+# Calcula a validação dos sobreavisos
 # ============================================================
 
-if nome_aba == "base_sobreaviso":
-    st.divider()
-    st.markdown("### Validação dos sobreavisos")
+valor_sobreaviso_12h = 0.0
+erros_sobreaviso_df = pd.DataFrame()
+erro_ao_validar_sobreaviso = None
 
+
+if nome_aba == "base_sobreaviso":
     try:
         outros_valores_df = get_sheet_data(
             "outros_valores"
@@ -596,7 +646,7 @@ if nome_aba == "base_sobreaviso":
             )
         )
 
-        resumo_sobreaviso_df, erros_sobreaviso_df = (
+        erros_sobreaviso_df = (
             analisar_erros_sobreaviso(
                 dataframe_editado_limpo,
                 valor_sobreaviso_12h,
@@ -604,157 +654,7 @@ if nome_aba == "base_sobreaviso":
         )
 
     except Exception as error:
-        st.error(
-            "Não foi possível validar os registros "
-            "de sobreaviso."
-        )
-
-        st.exception(error)
-        st.stop()
-
-
-    limite_24h = valor_sobreaviso_12h * 2
-
-    quantidade_erros = len(
-        erros_sobreaviso_df
-    )
-
-
-    coluna_valor_12h, coluna_limite, coluna_erros = (
-        st.columns(3)
-    )
-
-    with coluna_valor_12h:
-        st.metric(
-            "Valor de 12h",
-            formatar_moeda(
-                valor_sobreaviso_12h
-            ),
-        )
-
-    with coluna_limite:
-        st.metric(
-            "Limite diário de 24h",
-            formatar_moeda(
-                limite_24h
-            ),
-        )
-
-    with coluna_erros:
-        st.metric(
-            "Dias com erro",
-            quantidade_erros,
-        )
-
-
-    if quantidade_erros > 0:
-        st.error(
-            f"Foram encontrados {quantidade_erros} "
-            "registro(s) diário(s) com mais de 24 horas "
-            "de sobreaviso para o mesmo médico."
-        )
-
-        st.markdown(
-            "#### Dias que precisam ser corrigidos"
-        )
-
-        st.dataframe(
-            erros_sobreaviso_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Data": st.column_config.DateColumn(
-                    "Data",
-                    format="DD/MM/YYYY",
-                ),
-                "Médico": st.column_config.TextColumn(
-                    "Médico",
-                    width="large",
-                ),
-                "Valor total": (
-                    st.column_config.NumberColumn(
-                        "Valor total",
-                        format="R$ %.2f",
-                    )
-                ),
-                "Horas estimadas": (
-                    st.column_config.NumberColumn(
-                        "Horas estimadas",
-                        format="%.0f h",
-                    )
-                ),
-                "Limite de 24h": (
-                    st.column_config.NumberColumn(
-                        "Limite de 24h",
-                        format="R$ %.2f",
-                    )
-                ),
-                "Valor excedente": (
-                    st.column_config.NumberColumn(
-                        "Valor excedente",
-                        format="R$ %.2f",
-                    )
-                ),
-            },
-        )
-
-    else:
-        st.success(
-            "Nenhum médico possui mais de 24 horas de "
-            "sobreaviso no mesmo dia."
-        )
-
-
-    with st.expander(
-        "Ver resumo diário de todos os sobreavisos"
-    ):
-        if resumo_sobreaviso_df.empty:
-            st.info(
-                "Não existem registros válidos de sobreaviso."
-            )
-
-        else:
-            st.dataframe(
-                resumo_sobreaviso_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Data": st.column_config.DateColumn(
-                        "Data",
-                        format="DD/MM/YYYY",
-                    ),
-                    "Médico": (
-                        st.column_config.TextColumn(
-                            "Médico",
-                            width="large",
-                        )
-                    ),
-                    "Valor total": (
-                        st.column_config.NumberColumn(
-                            "Valor total",
-                            format="R$ %.2f",
-                        )
-                    ),
-                    "Horas estimadas": (
-                        st.column_config.NumberColumn(
-                            "Horas estimadas",
-                            format="%.0f h",
-                        )
-                    ),
-                    "Limite de 24h": (
-                        st.column_config.NumberColumn(
-                            "Limite de 24h",
-                            format="R$ %.2f",
-                        )
-                    ),
-                    "Valor excedente": (
-                        st.column_config.NumberColumn(
-                            "Valor excedente",
-                            format="R$ %.2f",
-                        )
-                    ),
-                },
-            )
+        erro_ao_validar_sobreaviso = error
 
 
 # ============================================================
@@ -775,51 +675,35 @@ salvar_alteracoes = st.button(
 
 
 if salvar_alteracoes:
-    dataframe_para_salvar = limpar_dataframe(
-        dataframe_editado
+    dataframe_para_salvar = (
+        dataframe_editado_limpo.copy()
     )
 
     bloquear_salvamento = False
 
     if nome_aba == "base_sobreaviso":
-        try:
-            outros_valores_df = get_sheet_data(
-                "outros_valores"
-            ).copy()
-
-            valor_sobreaviso_12h = (
-                obter_valor_sobreaviso_12h(
-                    outros_valores_df
-                )
-            )
-
-            _, erros_sobreaviso_df = (
-                analisar_erros_sobreaviso(
-                    dataframe_para_salvar,
-                    valor_sobreaviso_12h,
-                )
-            )
-
-            bloquear_salvamento = (
-                not erros_sobreaviso_df.empty
-            )
-
-        except Exception as error:
+        if erro_ao_validar_sobreaviso is not None:
             st.error(
-                "Não foi possível validar os sobreavisos."
+                "Não foi possível validar os registros de "
+                "sobreaviso. As alterações não foram salvas."
             )
 
-            st.exception(error)
+            st.exception(
+                erro_ao_validar_sobreaviso
+            )
+
             bloquear_salvamento = True
 
+        elif not erros_sobreaviso_df.empty:
+            st.error(
+                "As alterações não foram salvas. Corrija "
+                "primeiro os dias com mais de 24 horas de "
+                "sobreaviso."
+            )
 
-    if bloquear_salvamento:
-        st.error(
-            "As alterações não foram salvas. Corrija primeiro "
-            "os dias com mais de 24 horas de sobreaviso."
-        )
+            bloquear_salvamento = True
 
-    else:
+    if not bloquear_salvamento:
         try:
             with st.spinner(
                 "Salvando alterações..."
@@ -846,3 +730,83 @@ if salvar_alteracoes:
             )
 
             st.exception(error)
+
+
+# ============================================================
+# Validação dos sobreavisos
+# ============================================================
+
+if nome_aba == "base_sobreaviso":
+    st.divider()
+
+    st.markdown("### Validação dos sobreavisos")
+
+    st.caption(
+        "O valor cadastrado representa um período de 12 horas. "
+        "Um médico não pode possuir mais de 24 horas de "
+        "sobreaviso no mesmo dia."
+    )
+
+    if erro_ao_validar_sobreaviso is not None:
+        st.error(
+            "Não foi possível validar os registros "
+            "de sobreaviso."
+        )
+
+        st.exception(
+            erro_ao_validar_sobreaviso
+        )
+
+    else:
+        limite_24h = valor_sobreaviso_12h * 2
+
+        quantidade_erros = len(
+            erros_sobreaviso_df
+        )
+
+        coluna_valor_12h, coluna_limite, coluna_erros = (
+            st.columns(3)
+        )
+
+        with coluna_valor_12h:
+            st.metric(
+                "Valor de 12h",
+                formatar_moeda(
+                    valor_sobreaviso_12h
+                ),
+            )
+
+        with coluna_limite:
+            st.metric(
+                "Limite diário de 24h",
+                formatar_moeda(
+                    limite_24h
+                ),
+            )
+
+        with coluna_erros:
+            st.metric(
+                "Dias com erro",
+                quantidade_erros,
+            )
+
+        if quantidade_erros > 0:
+            st.error(
+                f"Foram encontrados {quantidade_erros} "
+                "dia(s) com mais de 24 horas de sobreaviso "
+                "para o mesmo médico."
+            )
+
+            st.markdown(
+                "#### Dias que precisam ser corrigidos"
+            )
+
+            exibir_tabela_validacao(
+                erros_sobreaviso_df
+            )
+
+        else:
+            st.success(
+                "Nenhum médico possui mais de 24 horas de "
+                "sobreaviso no mesmo dia."
+            )
