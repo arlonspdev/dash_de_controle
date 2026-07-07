@@ -178,16 +178,19 @@ def obter_lista_unica(
 
 def formatar_procedimentos(
     procedimentos_selecionados: list[str],
+    incluir_apostrofo: bool = False,
 ) -> str:
     """
-    Formata a lista de procedimentos para ser salva
-    em uma única célula.
+    Formata a lista de procedimentos em uma única string.
 
-    Exemplo:
-        ["Polipectomia", "Mucosectomia"]
+    Exemplo para exibição:
+        +Polipectomia +Mucosectomia
 
-    Resultado:
-        "+Polipectomia +Mucosectomia"
+    Exemplo para salvar no Google Sheets:
+        '+Polipectomia +Mucosectomia
+
+    O apóstrofo inicial impede que o Google Sheets interprete
+    o primeiro sinal de mais como uma fórmula.
     """
     procedimentos_formatados = []
 
@@ -195,18 +198,33 @@ def formatar_procedimentos(
         procedimento_limpo = (
             str(procedimento)
             .strip()
-            .lstrip("+")
-            .strip()
         )
+
+        if procedimento_limpo.startswith("'"):
+            procedimento_limpo = (
+                procedimento_limpo[1:]
+                .strip()
+            )
+
+        if procedimento_limpo.startswith("+"):
+            procedimento_limpo = (
+                procedimento_limpo[1:]
+                .strip()
+            )
 
         if procedimento_limpo:
             procedimentos_formatados.append(
                 f"+{procedimento_limpo}"
             )
 
-    return " ".join(
+    texto_formatado = " ".join(
         procedimentos_formatados
     )
+
+    if incluir_apostrofo and texto_formatado:
+        return f"'{texto_formatado}"
+
+    return texto_formatado
 
 
 def obter_taxa_aparelho(
@@ -608,8 +626,12 @@ with st.container(border=True):
     )
 
 
-procedimentos_formatados = formatar_procedimentos(
-    procedimentos_selecionados
+# Texto sem apóstrofo para exibição na tela.
+procedimentos_formatados_exibicao = (
+    formatar_procedimentos(
+        procedimentos_selecionados,
+        incluir_apostrofo=False,
+    )
 )
 
 
@@ -713,7 +735,7 @@ with st.container(border=True):
 
             st.markdown(
                 f"**Procedimentos:** "
-                f"{procedimentos_formatados}"
+                f"{procedimentos_formatados_exibicao}"
             )
 
         st.divider()
@@ -783,9 +805,12 @@ if salvar_dados:
         nome_paciente.strip()
     )
 
-    procedimentos_formatados = (
+    # Texto com apóstrofo inicial para evitar que o Google
+    # Sheets interprete o primeiro "+" como fórmula.
+    procedimentos_formatados_planilha = (
         formatar_procedimentos(
-            procedimentos_selecionados
+            procedimentos_selecionados,
+            incluir_apostrofo=True,
         )
     )
 
@@ -811,7 +836,7 @@ if salvar_dados:
         convenio_selecionado,
         nome_medico,
         nome_exame,
-        procedimentos_formatados,
+        procedimentos_formatados_planilha,
         valor_exame,
         taxa_aparelho,
         valor_medico,
