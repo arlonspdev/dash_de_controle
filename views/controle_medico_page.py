@@ -10,6 +10,7 @@ from auxiliar.google_sheets import get_sheet_data
 
 NOME_ABA_BASE_DADOS = "base_dados"
 NOME_ABA_MEDICOS = "lista_medicos"
+NOME_ABA_SOBREAVISO = "base_sobreaviso"
 
 
 # ============================================================
@@ -160,7 +161,7 @@ def validar_colunas(
     colunas_obrigatorias: list[str],
 ) -> None:
     """
-    Verifica se a planilha possui todas as colunas necessárias.
+    Verifica se a planilha possui as colunas necessárias.
     """
     colunas_ausentes = [
         coluna
@@ -211,6 +212,10 @@ try:
             NOME_ABA_MEDICOS
         ).copy()
 
+        base_sobreaviso_df = get_sheet_data(
+            NOME_ABA_SOBREAVISO
+        ).copy()
+
 except Exception as error:
     st.error(
         "Não foi possível carregar os dados das planilhas."
@@ -228,6 +233,12 @@ base_dados_df.columns = (
 
 lista_medicos_df.columns = (
     lista_medicos_df.columns
+    .astype(str)
+    .str.strip()
+)
+
+base_sobreaviso_df.columns = (
+    base_sobreaviso_df.columns
     .astype(str)
     .str.strip()
 )
@@ -255,6 +266,16 @@ try:
         [
             "nome_medico",
             "valor_minimo",
+        ],
+    )
+
+    validar_colunas(
+        base_sobreaviso_df,
+        NOME_ABA_SOBREAVISO,
+        [
+            "data",
+            "medico",
+            "valor",
         ],
     )
 
@@ -361,13 +382,15 @@ quantidade_datas_invalidas = int(
 
 if quantidade_datas_invalidas:
     st.warning(
-        f"{quantidade_datas_invalidas} registro(s) possuem uma "
-        "data inválida e não serão considerados."
+        f"{quantidade_datas_invalidas} registro(s) da base de "
+        "atendimentos possuem uma data inválida e não serão "
+        "considerados."
     )
 
 
 base_dados_df = base_dados_df.loc[
     base_dados_df["data_convertida"].notna()
+    & base_dados_df["nome_medico"].ne("")
 ].copy()
 
 
@@ -383,6 +406,54 @@ try:
                 coluna_monetaria,
             )
         )
+
+except ValueError as error:
+    st.error(str(error))
+    st.stop()
+
+
+# ============================================================
+# Tratamento da base de sobreaviso
+# ============================================================
+
+base_sobreaviso_df["medico"] = (
+    base_sobreaviso_df["medico"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+)
+
+base_sobreaviso_df["data_convertida"] = converter_coluna_data(
+    base_sobreaviso_df["data"]
+)
+
+
+quantidade_datas_sobreaviso_invalidas = int(
+    base_sobreaviso_df["data_convertida"].isna().sum()
+)
+
+
+if quantidade_datas_sobreaviso_invalidas:
+    st.warning(
+        f"{quantidade_datas_sobreaviso_invalidas} registro(s) "
+        "da base de sobreaviso possuem uma data inválida e não "
+        "serão considerados."
+    )
+
+
+base_sobreaviso_df = base_sobreaviso_df.loc[
+    base_sobreaviso_df["data_convertida"].notna()
+    & base_sobreaviso_df["medico"].ne("")
+].copy()
+
+
+try:
+    base_sobreaviso_df["valor"] = (
+        converter_coluna_monetaria(
+            base_sobreaviso_df["valor"],
+            "valor da base_sobreaviso",
+        )
+    )
 
 except ValueError as error:
     st.error(str(error))
@@ -502,9 +573,23 @@ base_filtrada_df = base_dados_df.loc[
 ].copy()
 
 
+sobreaviso_filtrado_df = base_sobreaviso_df.loc[
+    base_sobreaviso_df["data_convertida"].between(
+        data_inicial_timestamp,
+        data_final_timestamp,
+        inclusive="both",
+    )
+    & base_sobreaviso_df["medico"].eq(
+        medico_selecionado
+    )
+].copy()
+
+
 # ============================================================
-# Cálculo dos cards
+# Cálculo dos totais dos atendimentos
 # ============================================================
+
+total_atendimentos = len(base_filtrada_df)
 
 total_valor_exame = base_filtrada_df[
     "valor_exame"
@@ -519,14 +604,9 @@ total_valor_medico = base_filtrada_df[
 ].sum()
 
 
-# O valor mínimo continua sendo analisado por dia.
-#
-# Exemplo:
-# Dia 01: valor médico = R$ 300 e mínimo = R$ 500
-#         valor final = R$ 500
-#
-# Dia 02: valor médico = R$ 700 e mínimo = R$ 500
-#         valor final = R$ 700
+# ============================================================
+# Aplicação do valor mínimo por dia
+# ============================================================
 
 if base_filtrada_df.empty:
     resumo_diario_df = pd.DataFrame(
@@ -534,11 +614,11 @@ if base_filtrada_df.empty:
             "data_convertida",
             "valor_medico",
             "pagar_valor_minimo",
-            "valor_final_medico",
+            "valor_apos_minimo",
         ]
     )
 
-    total_final_medico = 0.0
+    total_apos_minimo = 0.0
     quantidade_dias_valor_minimo = 0
 
 else:
@@ -558,13 +638,13 @@ else:
         < valor_minimo_medico
     )
 
-    resumo_diario_df["valor_final_medico"] = (
+    resumo_diario_df["valor_apos_minimo"] = (
         resumo_diario_df["valor_medico"]
         .clip(lower=valor_minimo_medico)
     )
 
-    total_final_medico = resumo_diario_df[
-        "valor_final_medico"
+    total_apos_minimo = resumo_diario_df[
+        "valor_apos_minimo"
     ].sum()
 
     quantidade_dias_valor_minimo = int(
@@ -573,29 +653,53 @@ else:
 
 
 # ============================================================
+# Sobreaviso e valor final
+# ============================================================
+
+total_sobreaviso = sobreaviso_filtrado_df[
+    "valor"
+].sum()
+
+
+# O sobreaviso é acrescentado somente depois da aplicação
+# do valor mínimo diário.
+total_final_medico = (
+    total_apos_minimo
+    + total_sobreaviso
+)
+
+
+# ============================================================
 # Cards
 # ============================================================
 
 st.markdown("### Totais do período")
 
-coluna_1, coluna_2, coluna_3, coluna_4 = st.columns(4)
 
+coluna_1, coluna_2, coluna_3 = st.columns(3)
 
 with coluna_1:
+    st.metric(
+        "Total de atendimentos",
+        total_atendimentos,
+    )
+
+with coluna_2:
     st.metric(
         "Valor dos exames",
         formatar_moeda(total_valor_exame),
     )
 
-
-with coluna_2:
+with coluna_3:
     st.metric(
         "Taxa do aparelho",
         formatar_moeda(total_taxa_aparelho),
     )
 
 
-with coluna_3:
+coluna_4, coluna_5, coluna_6 = st.columns(3)
+
+with coluna_4:
     st.metric(
         "Valor médico",
         formatar_moeda(total_valor_medico),
@@ -605,8 +709,17 @@ with coluna_3:
         ),
     )
 
+with coluna_5:
+    st.metric(
+        "Valor sobreaviso",
+        formatar_moeda(total_sobreaviso),
+        help=(
+            "Soma dos sobreavisos registrados para o médico "
+            "no período selecionado."
+        ),
+    )
 
-with coluna_4:
+with coluna_6:
     st.metric(
         "Valor final médico",
         formatar_moeda(total_final_medico),
@@ -618,8 +731,8 @@ with coluna_4:
             else None
         ),
         help=(
-            "Total após aplicar o valor mínimo do médico "
-            "em cada dia de atendimento."
+            "Total após aplicar o valor mínimo em cada dia "
+            "e acrescentar os valores de sobreaviso."
         ),
     )
 
@@ -640,7 +753,7 @@ else:
 
 
 # ============================================================
-# Tabela sem agrupamento
+# Tabela de atendimentos sem agrupamento
 # ============================================================
 
 st.markdown("### Atendimentos")
@@ -736,6 +849,70 @@ else:
             "Valor médico": (
                 st.column_config.NumberColumn(
                     "Valor médico",
+                    format="R$ %.2f",
+                )
+            ),
+        },
+    )
+
+
+# ============================================================
+# Tabela de sobreavisos
+# ============================================================
+
+st.markdown("### Sobreavisos")
+
+st.caption(
+    f"Sobreavisos de {medico_selecionado} entre "
+    f"{data_inicial.strftime('%d/%m/%Y')} e "
+    f"{data_final.strftime('%d/%m/%Y')}."
+)
+
+
+if sobreaviso_filtrado_df.empty:
+    st.info(
+        "Nenhum sobreaviso foi encontrado para o médico "
+        "e período selecionados."
+    )
+
+else:
+    # Agrupa por dia. Caso existam dois registros no mesmo dia,
+    # os valores serão somados.
+    tabela_sobreaviso_df = (
+        sobreaviso_filtrado_df
+        .groupby(
+            "data_convertida",
+            as_index=False,
+        )
+        .agg(
+            valor=("valor", "sum")
+        )
+        .sort_values("data_convertida")
+    )
+
+    tabela_sobreaviso_df = tabela_sobreaviso_df.rename(
+        columns={
+            "data_convertida": "Data",
+            "valor": "Valor sobreaviso",
+        }
+    )
+
+    tabela_sobreaviso_df["Data"] = (
+        tabela_sobreaviso_df["Data"].dt.date
+    )
+
+    st.dataframe(
+        tabela_sobreaviso_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Data": st.column_config.DateColumn(
+                "Data",
+                format="DD/MM/YYYY",
+            ),
+            "Valor sobreaviso": (
+                st.column_config.NumberColumn(
+                    "Valor sobreaviso",
                     format="R$ %.2f",
                 )
             ),
