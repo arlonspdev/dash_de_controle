@@ -148,8 +148,10 @@ def obter_lista_unica(
     nome_coluna: str,
 ) -> list[str]:
     """
-    Retorna valores preenchidos e únicos de uma coluna,
-    preservando a ordem da planilha.
+    Retorna valores preenchidos, únicos e em ordem alfabética.
+
+    A ordenação ignora diferenças entre letras maiúsculas,
+    minúsculas e acentos.
     """
     valores = (
         dataframe[nome_coluna]
@@ -162,10 +164,15 @@ def obter_lista_unica(
         valores.ne("")
     ]
 
-    return (
+    valores_unicos = (
         valores
         .drop_duplicates()
         .tolist()
+    )
+
+    return sorted(
+        valores_unicos,
+        key=normalizar_texto,
     )
 
 
