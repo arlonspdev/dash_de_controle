@@ -19,6 +19,14 @@ BASES_DISPONIVEIS = {
         "aba": "lista_exames",
         "descricao": "Cadastro dos exames e respectivos valores.",
     },
+    "Procedimentos": {
+        "aba": "lista_procedimentos",
+        "descricao": "Cadastro dos procedimentos disponíveis.",
+    },
+    "Convênios": {
+        "aba": "lista_convenios",
+        "descricao": "Cadastro dos convênios disponíveis.",
+    },
     "Base de dados": {
         "aba": "base_dados",
         "descricao": "Registros dos atendimentos realizados.",
@@ -810,3 +818,4 @@ if nome_aba == "base_sobreaviso":
                 "Nenhum médico possui mais de 24 horas de "
                 "sobreaviso no mesmo dia."
             )
+
