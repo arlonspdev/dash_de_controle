@@ -550,13 +550,14 @@ if not nomes_exames:
     st.stop()
 
 
+# Procedimentos são opcionais. A página continua funcionando
+# mesmo que a lista de procedimentos esteja vazia.
 if not procedimentos_disponiveis:
     st.warning(
         "Nenhum procedimento foi encontrado na aba "
-        f"`{NOME_ABA_PROCEDIMENTOS}`."
+        f"`{NOME_ABA_PROCEDIMENTOS}`. "
+        "O atendimento poderá ser salvo sem procedimento."
     )
-
-    st.stop()
 
 
 # Convênios são opcionais. A página continua funcionando
@@ -672,9 +673,9 @@ st.markdown(
 )
 
 st.caption(
-    "Selecione um exame e um ou mais procedimentos. "
-    "Use o botão abaixo para adicionar outros exames ao "
-    "mesmo atendimento."
+    "Selecione o exame realizado. O preenchimento dos "
+    "procedimentos é opcional. Use o botão abaixo para "
+    "adicionar outros exames ao mesmo atendimento."
 )
 
 
@@ -709,12 +710,12 @@ for indice in range(
         with coluna_procedimentos:
             procedimentos_selecionados = (
                 st.multiselect(
-                    "Procedimentos realizados",
+                    "Procedimentos — opcional",
                     options=procedimentos_disponiveis,
                     default=[],
                     placeholder=(
-                        "Selecione um ou mais "
-                        "procedimentos"
+                        "Selecione os procedimentos, "
+                        "se houver"
                     ),
                     key=(
                         f"procedimentos_"
@@ -797,17 +798,17 @@ possui_exames_duplicados = (
 if possui_exames_duplicados:
     st.warning(
         "O mesmo exame foi selecionado mais de uma vez. "
-        "Utilize um único bloco para cada exame e selecione "
-        "todos os procedimentos desse exame no multisseletor."
+        "Utilize somente um bloco para cada exame."
     )
 
 
+# Apenas o exame é obrigatório em cada bloco.
+# Procedimentos podem ficar vazios.
 itens_exames_validos = (
     bool(itens_exames)
     and all(
         [
             item["nome_exame"]
-            and item["procedimentos"]
             and item["exame_encontrado"]
             for item in itens_exames
         ]
@@ -860,7 +861,7 @@ with st.container(border=True):
 
         if not itens_exames_validos:
             mensagens_pendentes.append(
-                "exames e procedimentos"
+                "exames"
             )
 
         st.info(
@@ -910,14 +911,19 @@ with st.container(border=True):
         resumo_exames = []
 
         for item in itens_exames:
+            procedimentos_exibicao = (
+                formatar_procedimentos(
+                    item["procedimentos"],
+                    incluir_apostrofo=False,
+                )
+            )
+
             resumo_exames.append(
                 {
                     "Exame": item["nome_exame"],
                     "Procedimentos": (
-                        formatar_procedimentos(
-                            item["procedimentos"],
-                            incluir_apostrofo=False,
-                        )
+                        procedimentos_exibicao
+                        or "Não informado"
                     ),
                     "Valor do exame": (
                         item["valor_exame"]
@@ -1031,10 +1037,11 @@ with st.container(border=True):
             )
 
         st.caption(
-            "Ao salvar, será criada uma linha para cada "
-            "procedimento. Os valores financeiros serão "
-            "registrados apenas na primeira linha de cada "
-            "exame, evitando duplicidade nos totais."
+            "Para exames com procedimentos, será criada uma "
+            "linha para cada procedimento. Para exames sem "
+            "procedimentos, será criada uma linha com a coluna "
+            "`procedimentos` vazia. Os valores financeiros são "
+            "registrados apenas na primeira linha de cada exame."
         )
 
 
@@ -1067,19 +1074,31 @@ if salvar_dados:
 
 
     for item in itens_exames:
-        for indice_procedimento, procedimento in enumerate(
+        # Quando não houver procedimento, cria uma única
+        # linha para o exame com a coluna vazia.
+        procedimentos_do_exame = (
             item["procedimentos"]
+            if item["procedimentos"]
+            else [None]
+        )
+
+        for indice_procedimento, procedimento in enumerate(
+            procedimentos_do_exame
         ):
             primeira_linha_do_exame = (
                 indice_procedimento == 0
             )
 
-            procedimento_para_salvar = (
-                formatar_procedimentos(
-                    [procedimento],
-                    incluir_apostrofo=True,
+            if procedimento is None:
+                procedimento_para_salvar = ""
+
+            else:
+                procedimento_para_salvar = (
+                    formatar_procedimentos(
+                        [procedimento],
+                        incluir_apostrofo=True,
+                    )
                 )
-            )
 
             # Os valores financeiros são incluídos somente
             # na primeira linha de cada exame.
