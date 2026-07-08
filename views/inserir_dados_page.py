@@ -30,7 +30,7 @@ def formatar_moeda(valor: float) -> str:
     Exemplo:
         1234.5 -> R$ 1.234,50
     """
-    valor_formatado = f"{valor:,.2f}"
+    valor_formatado = f"{float(valor):,.2f}"
 
     valor_formatado = (
         valor_formatado
@@ -44,14 +44,7 @@ def formatar_moeda(valor: float) -> str:
 
 def converter_para_float(valor) -> float:
     """
-    Converte valores como:
-
-        100
-        100.50
-        "100,50"
-        "R$ 1.200,50"
-
-    para float.
+    Converte valores numéricos e monetários para float.
     """
     if valor is None or pd.isna(valor):
         return 0.0
@@ -181,35 +174,29 @@ def formatar_procedimentos(
     incluir_apostrofo: bool = False,
 ) -> str:
     """
-    Formata a lista de procedimentos em uma única string.
+    Formata uma lista de procedimentos.
 
-    Exemplo para exibição:
+    Exibição:
         +Polipectomia +Mucosectomia
 
-    Exemplo para salvar no Google Sheets:
+    Google Sheets:
         '+Polipectomia +Mucosectomia
-
-    O apóstrofo inicial impede que o Google Sheets interprete
-    o primeiro sinal de mais como uma fórmula.
     """
     procedimentos_formatados = []
 
     for procedimento in procedimentos_selecionados:
-        procedimento_limpo = (
-            str(procedimento)
-            .strip()
-        )
+        procedimento_limpo = str(
+            procedimento
+        ).strip()
 
         if procedimento_limpo.startswith("'"):
             procedimento_limpo = (
-                procedimento_limpo[1:]
-                .strip()
+                procedimento_limpo[1:].strip()
             )
 
         if procedimento_limpo.startswith("+"):
             procedimento_limpo = (
-                procedimento_limpo[1:]
-                .strip()
+                procedimento_limpo[1:].strip()
             )
 
         if procedimento_limpo:
@@ -260,6 +247,70 @@ def obter_taxa_aparelho(
     return valor, True
 
 
+def obter_dados_exame(
+    lista_exames_df: pd.DataFrame,
+    nome_exame: str | None,
+) -> tuple[float, float, bool]:
+    """
+    Retorna o valor do exame, o valor do médico e se o
+    exame foi localizado na lista.
+    """
+    if not nome_exame:
+        return 0.0, 0.0, False
+
+    exame_selecionado_df = lista_exames_df.loc[
+        lista_exames_df["nome_exame"]
+        .astype(str)
+        .str.strip()
+        .eq(nome_exame)
+    ]
+
+    if exame_selecionado_df.empty:
+        return 0.0, 0.0, False
+
+    exame_selecionado = (
+        exame_selecionado_df.iloc[0]
+    )
+
+    valor_exame = converter_para_float(
+        exame_selecionado["valor_exame"]
+    )
+
+    valor_medico = converter_para_float(
+        exame_selecionado["valor_medico"]
+    )
+
+    return (
+        valor_exame,
+        valor_medico,
+        True,
+    )
+
+
+def adicionar_bloco_exame() -> None:
+    """
+    Adiciona um novo bloco de exame e procedimentos.
+    """
+    st.session_state[
+        "quantidade_blocos_exames"
+    ] += 1
+
+
+def remover_bloco_exame() -> None:
+    """
+    Remove o último bloco de exame e procedimentos.
+    """
+    quantidade_atual = st.session_state.get(
+        "quantidade_blocos_exames",
+        1,
+    )
+
+    if quantidade_atual > 1:
+        st.session_state[
+            "quantidade_blocos_exames"
+        ] = quantidade_atual - 1
+
+
 # ============================================================
 # Estado da página
 # ============================================================
@@ -268,6 +319,12 @@ if "versao_formulario_atendimento" not in st.session_state:
     st.session_state[
         "versao_formulario_atendimento"
     ] = 0
+
+
+if "quantidade_blocos_exames" not in st.session_state:
+    st.session_state[
+        "quantidade_blocos_exames"
+    ] = 1
 
 
 mensagem_sucesso = st.session_state.pop(
@@ -284,6 +341,10 @@ if mensagem_sucesso:
 
 versao_formulario = st.session_state[
     "versao_formulario_atendimento"
+]
+
+quantidade_blocos_exames = st.session_state[
+    "quantidade_blocos_exames"
 ]
 
 
@@ -354,7 +415,10 @@ except Exception as error:
     st.stop()
 
 
-# Remove espaços acidentais dos nomes das colunas.
+# ============================================================
+# Limpeza dos nomes das colunas
+# ============================================================
+
 lista_exames_df.columns = (
     lista_exames_df.columns
     .astype(str)
@@ -444,7 +508,7 @@ except ValueError as error:
 
 
 # ============================================================
-# Listas para os seletores
+# Listas dos seletores
 # ============================================================
 
 nomes_medicos = obter_lista_unica(
@@ -495,13 +559,14 @@ if not procedimentos_disponiveis:
     st.stop()
 
 
+# Convênios são opcionais. A página continua funcionando
+# mesmo que a lista de convênios esteja vazia.
 if not convenios_disponiveis:
     st.warning(
         "Nenhum convênio foi encontrado na aba "
-        f"`{NOME_ABA_CONVENIOS}`."
+        f"`{NOME_ABA_CONVENIOS}`. "
+        "O atendimento poderá ser salvo sem convênio."
     )
-
-    st.stop()
 
 
 # ============================================================
@@ -525,7 +590,7 @@ if not encontrou_taxa_aparelho:
 
 
 # ============================================================
-# Campos para preenchimento
+# Dados comuns do atendimento
 # ============================================================
 
 with st.container(border=True):
@@ -558,35 +623,18 @@ with st.container(border=True):
             ),
         )
 
-    coluna_paciente, coluna_convenio = st.columns(
-        [2, 1]
+    nome_paciente = st.text_input(
+        "Nome do paciente",
+        placeholder=(
+            "Digite o nome completo do paciente"
+        ),
+        key=(
+            f"nome_paciente_"
+            f"{versao_formulario}"
+        ),
     )
 
-    with coluna_paciente:
-        nome_paciente = st.text_input(
-            "Nome do paciente",
-            placeholder=(
-                "Digite o nome completo do paciente"
-            ),
-            key=(
-                f"nome_paciente_"
-                f"{versao_formulario}"
-            ),
-        )
-
-    with coluna_convenio:
-        convenio_selecionado = st.selectbox(
-            "Convênio",
-            options=convenios_disponiveis,
-            index=None,
-            placeholder="Selecione um convênio",
-            key=(
-                f"convenio_"
-                f"{versao_formulario}"
-            ),
-        )
-
-    coluna_medico, coluna_exame = st.columns(2)
+    coluna_medico, coluna_convenio = st.columns(2)
 
     with coluna_medico:
         nome_medico = st.selectbox(
@@ -600,100 +648,225 @@ with st.container(border=True):
             ),
         )
 
-    with coluna_exame:
-        nome_exame = st.selectbox(
-            "Exame realizado",
-            options=nomes_exames,
+    with coluna_convenio:
+        convenio_selecionado = st.selectbox(
+            "Convênio — opcional",
+            options=convenios_disponiveis,
             index=None,
-            placeholder="Selecione um exame",
+            placeholder=(
+                "Selecione um convênio, se houver"
+            ),
             key=(
-                f"nome_exame_"
+                f"convenio_"
                 f"{versao_formulario}"
             ),
         )
 
-    procedimentos_selecionados = st.multiselect(
-        "Procedimentos realizados",
-        options=procedimentos_disponiveis,
-        default=None,
-        placeholder=(
-            "Selecione um ou mais procedimentos"
-        ),
-        key=(
-            f"procedimentos_"
-            f"{versao_formulario}"
-        ),
-    )
 
+# ============================================================
+# Exames e procedimentos
+# ============================================================
 
-# Texto sem apóstrofo para exibição na tela.
-procedimentos_formatados_exibicao = (
-    formatar_procedimentos(
-        procedimentos_selecionados,
-        incluir_apostrofo=False,
-    )
+st.markdown(
+    "### Exames e procedimentos"
+)
+
+st.caption(
+    "Selecione um exame e um ou mais procedimentos. "
+    "Use o botão abaixo para adicionar outros exames ao "
+    "mesmo atendimento."
 )
 
 
-# ============================================================
-# Valores do exame selecionado
-# ============================================================
-
-valor_exame = 0.0
-valor_medico = 0.0
-exame_encontrado = False
+itens_exames = []
 
 
-if nome_exame:
-    exame_selecionado_df = lista_exames_df.loc[
-        lista_exames_df["nome_exame"]
-        .astype(str)
-        .str.strip()
-        .eq(nome_exame)
-    ]
-
-    if not exame_selecionado_df.empty:
-        exame_selecionado = (
-            exame_selecionado_df.iloc[0]
+for indice in range(
+    quantidade_blocos_exames
+):
+    with st.container(border=True):
+        st.markdown(
+            f"#### Exame {indice + 1}"
         )
 
-        valor_exame = converter_para_float(
-            exame_selecionado["valor_exame"]
+        coluna_exame, coluna_procedimentos = (
+            st.columns([1, 2])
         )
 
-        valor_medico = converter_para_float(
-            exame_selecionado["valor_medico"]
+        with coluna_exame:
+            nome_exame = st.selectbox(
+                "Exame realizado",
+                options=nomes_exames,
+                index=None,
+                placeholder="Selecione um exame",
+                key=(
+                    f"nome_exame_"
+                    f"{versao_formulario}_"
+                    f"{indice}"
+                ),
+            )
+
+        with coluna_procedimentos:
+            procedimentos_selecionados = (
+                st.multiselect(
+                    "Procedimentos realizados",
+                    options=procedimentos_disponiveis,
+                    default=[],
+                    placeholder=(
+                        "Selecione um ou mais "
+                        "procedimentos"
+                    ),
+                    key=(
+                        f"procedimentos_"
+                        f"{versao_formulario}_"
+                        f"{indice}"
+                    ),
+                )
+            )
+
+        (
+            valor_exame,
+            valor_medico,
+            exame_encontrado,
+        ) = obter_dados_exame(
+            lista_exames_df,
+            nome_exame,
         )
 
-        exame_encontrado = True
+        itens_exames.append(
+            {
+                "indice": indice,
+                "nome_exame": nome_exame,
+                "procedimentos": (
+                    procedimentos_selecionados
+                ),
+                "valor_exame": valor_exame,
+                "valor_medico": valor_medico,
+                "exame_encontrado": (
+                    exame_encontrado
+                ),
+            }
+        )
+
+
+coluna_adicionar, coluna_remover = st.columns(2)
+
+with coluna_adicionar:
+    st.button(
+        "➕ Adicionar outro exame",
+        type="secondary",
+        use_container_width=True,
+        on_click=adicionar_bloco_exame,
+    )
+
+with coluna_remover:
+    st.button(
+        "➖ Remover último exame",
+        type="secondary",
+        use_container_width=True,
+        disabled=(
+            quantidade_blocos_exames <= 1
+        ),
+        on_click=remover_bloco_exame,
+    )
 
 
 # ============================================================
-# Resumo do registro
+# Validação dos exames
 # ============================================================
 
-campos_principais_preenchidos = all(
+nomes_exames_preenchidos = [
+    item["nome_exame"]
+    for item in itens_exames
+    if item["nome_exame"]
+]
+
+
+nomes_exames_normalizados = [
+    normalizar_texto(nome_exame)
+    for nome_exame in nomes_exames_preenchidos
+]
+
+
+possui_exames_duplicados = (
+    len(nomes_exames_normalizados)
+    != len(set(nomes_exames_normalizados))
+)
+
+
+if possui_exames_duplicados:
+    st.warning(
+        "O mesmo exame foi selecionado mais de uma vez. "
+        "Utilize um único bloco para cada exame e selecione "
+        "todos os procedimentos desse exame no multisseletor."
+    )
+
+
+itens_exames_validos = (
+    bool(itens_exames)
+    and all(
+        [
+            item["nome_exame"]
+            and item["procedimentos"]
+            and item["exame_encontrado"]
+            for item in itens_exames
+        ]
+    )
+    and not possui_exames_duplicados
+)
+
+
+campos_comuns_validos = all(
     [
         numero_atendimento.strip(),
         nome_paciente.strip(),
-        convenio_selecionado,
         nome_medico,
-        nome_exame,
-        procedimentos_selecionados,
-        exame_encontrado,
     ]
 )
 
+
+dados_validos = (
+    campos_comuns_validos
+    and itens_exames_validos
+)
+
+
+# ============================================================
+# Conferência do atendimento
+# ============================================================
 
 with st.container(border=True):
     st.markdown(
         "### Conferência do atendimento"
     )
 
-    if not campos_principais_preenchidos:
+    if not dados_validos:
+        mensagens_pendentes = []
+
+        if not numero_atendimento.strip():
+            mensagens_pendentes.append(
+                "número do atendimento"
+            )
+
+        if not nome_paciente.strip():
+            mensagens_pendentes.append(
+                "nome do paciente"
+            )
+
+        if not nome_medico:
+            mensagens_pendentes.append(
+                "médico responsável"
+            )
+
+        if not itens_exames_validos:
+            mensagens_pendentes.append(
+                "exames e procedimentos"
+            )
+
         st.info(
-            "Preencha os campos acima para visualizar "
-            "o resumo completo do atendimento."
+            "Preencha corretamente: "
+            + ", ".join(mensagens_pendentes)
+            + "."
         )
 
     else:
@@ -717,76 +890,157 @@ with st.container(border=True):
                 f"{nome_paciente.strip()}"
             )
 
-            st.markdown(
-                f"**Convênio:** "
-                f"{convenio_selecionado}"
-            )
-
         with coluna_resumo_2:
             st.markdown(
-                f"**Médico:** "
-                f"{nome_medico}"
+                f"**Médico:** {nome_medico}"
             )
 
             st.markdown(
-                f"**Exame:** "
-                f"{nome_exame}"
+                f"**Convênio:** "
+                f"{convenio_selecionado or 'Não informado'}"
             )
 
             st.markdown(
-                f"**Procedimentos:** "
-                f"{procedimentos_formatados_exibicao}"
+                f"**Quantidade de exames:** "
+                f"{len(itens_exames)}"
             )
 
         st.divider()
 
+        resumo_exames = []
+
+        for item in itens_exames:
+            resumo_exames.append(
+                {
+                    "Exame": item["nome_exame"],
+                    "Procedimentos": (
+                        formatar_procedimentos(
+                            item["procedimentos"],
+                            incluir_apostrofo=False,
+                        )
+                    ),
+                    "Valor do exame": (
+                        item["valor_exame"]
+                    ),
+                    "Valor médico": (
+                        item["valor_medico"]
+                    ),
+                    "Taxa do aparelho": (
+                        taxa_aparelho
+                    ),
+                }
+            )
+
+        resumo_exames_df = pd.DataFrame(
+            resumo_exames
+        )
+
+        st.dataframe(
+            resumo_exames_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Exame": (
+                    st.column_config.TextColumn(
+                        "Exame",
+                        width="medium",
+                    )
+                ),
+                "Procedimentos": (
+                    st.column_config.TextColumn(
+                        "Procedimentos",
+                        width="large",
+                    )
+                ),
+                "Valor do exame": (
+                    st.column_config.NumberColumn(
+                        "Valor do exame",
+                        format="R$ %.2f",
+                    )
+                ),
+                "Valor médico": (
+                    st.column_config.NumberColumn(
+                        "Valor médico",
+                        format="R$ %.2f",
+                    )
+                ),
+                "Taxa do aparelho": (
+                    st.column_config.NumberColumn(
+                        "Taxa do aparelho",
+                        format="R$ %.2f",
+                    )
+                ),
+            },
+        )
+
+        total_valor_exames = sum(
+            item["valor_exame"]
+            for item in itens_exames
+        )
+
+        total_valor_medicos = sum(
+            item["valor_medico"]
+            for item in itens_exames
+        )
+
+        total_taxa_aparelho = (
+            taxa_aparelho
+            * len(itens_exames)
+        )
+
+        quantidade_procedimentos = sum(
+            len(item["procedimentos"])
+            for item in itens_exames
+        )
+
         (
-            coluna_valor_exame,
-            coluna_valor_medico,
-            coluna_taxa,
-        ) = st.columns(3)
+            coluna_total_exames,
+            coluna_total_procedimentos,
+            coluna_total_medico,
+            coluna_total_taxa,
+        ) = st.columns(4)
 
-        with coluna_valor_exame:
+        with coluna_total_exames:
             st.metric(
-                "Valor do exame",
+                "Total dos exames",
                 formatar_moeda(
-                    valor_exame
+                    total_valor_exames
                 ),
             )
 
-        with coluna_valor_medico:
+        with coluna_total_procedimentos:
             st.metric(
-                "Valor recebido pelo médico",
+                "Procedimentos",
+                quantidade_procedimentos,
+            )
+
+        with coluna_total_medico:
+            st.metric(
+                "Total do médico",
                 formatar_moeda(
-                    valor_medico
+                    total_valor_medicos
                 ),
             )
 
-        with coluna_taxa:
+        with coluna_total_taxa:
             st.metric(
                 "Taxa do aparelho",
                 formatar_moeda(
-                    taxa_aparelho
+                    total_taxa_aparelho
                 ),
             )
+
+        st.caption(
+            "Ao salvar, será criada uma linha para cada "
+            "procedimento. Os valores financeiros serão "
+            "registrados apenas na primeira linha de cada "
+            "exame, evitando duplicidade nos totais."
+        )
 
 
 # ============================================================
 # Salvar registro
 # ============================================================
-
-dados_validos = all(
-    [
-        numero_atendimento.strip(),
-        nome_paciente.strip(),
-        convenio_selecionado,
-        nome_medico,
-        nome_exame,
-        procedimentos_selecionados,
-        exame_encontrado,
-    ]
-)
-
 
 salvar_dados = st.button(
     "💾 Salvar atendimento",
@@ -805,42 +1059,71 @@ if salvar_dados:
         nome_paciente.strip()
     )
 
-    # Texto com apóstrofo inicial para evitar que o Google
-    # Sheets interprete o primeiro "+" como fórmula.
-    procedimentos_formatados_planilha = (
-        formatar_procedimentos(
-            procedimentos_selecionados,
-            incluir_apostrofo=True,
-        )
+    convenio_para_salvar = (
+        convenio_selecionado or ""
     )
 
-    # Ordem das colunas da aba base_dados:
-    #
-    # data
-    # numero_atendimento
-    # nome_paciente
-    # convenio
-    # nome_medico
-    # nome_exame
-    # procedimentos
-    # valor_exame
-    # taxa_aparelho
-    # valor_medico
+    novas_linhas = []
 
-    nova_linha = [
-        data_atendimento.strftime(
-            "%d/%m/%Y"
-        ),
-        numero_atendimento_limpo,
-        nome_paciente_limpo,
-        convenio_selecionado,
-        nome_medico,
-        nome_exame,
-        procedimentos_formatados_planilha,
-        valor_exame,
-        taxa_aparelho,
-        valor_medico,
-    ]
+
+    for item in itens_exames:
+        for indice_procedimento, procedimento in enumerate(
+            item["procedimentos"]
+        ):
+            primeira_linha_do_exame = (
+                indice_procedimento == 0
+            )
+
+            procedimento_para_salvar = (
+                formatar_procedimentos(
+                    [procedimento],
+                    incluir_apostrofo=True,
+                )
+            )
+
+            # Os valores financeiros são incluídos somente
+            # na primeira linha de cada exame.
+            #
+            # Isso evita que os valores sejam duplicados
+            # quando um exame possui vários procedimentos.
+
+            valor_exame_linha = (
+                item["valor_exame"]
+                if primeira_linha_do_exame
+                else 0.0
+            )
+
+            taxa_aparelho_linha = (
+                taxa_aparelho
+                if primeira_linha_do_exame
+                else 0.0
+            )
+
+            valor_medico_linha = (
+                item["valor_medico"]
+                if primeira_linha_do_exame
+                else 0.0
+            )
+
+            nova_linha = [
+                data_atendimento.strftime(
+                    "%d/%m/%Y"
+                ),
+                numero_atendimento_limpo,
+                nome_paciente_limpo,
+                convenio_para_salvar,
+                nome_medico,
+                item["nome_exame"],
+                procedimento_para_salvar,
+                valor_exame_linha,
+                taxa_aparelho_linha,
+                valor_medico_linha,
+            ]
+
+            novas_linhas.append(
+                nova_linha
+            )
+
 
     try:
         with st.spinner(
@@ -848,20 +1131,30 @@ if salvar_dados:
         ):
             append_sheet_data(
                 NOME_ABA_BASE_DADOS,
-                [nova_linha],
+                novas_linhas,
             )
+
+        quantidade_linhas = len(
+            novas_linhas
+        )
 
         st.session_state[
             "mensagem_sucesso_atendimento"
         ] = (
             f"Atendimento "
             f"{numero_atendimento_limpo} de "
-            f"{nome_paciente_limpo} salvo com sucesso."
+            f"{nome_paciente_limpo} salvo com sucesso. "
+            f"{quantidade_linhas} registro(s) foram "
+            "adicionados à base."
         )
 
         st.session_state[
             "versao_formulario_atendimento"
         ] += 1
+
+        st.session_state[
+            "quantidade_blocos_exames"
+        ] = 1
 
         st.toast(
             "Dados salvos com sucesso!",
