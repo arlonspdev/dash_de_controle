@@ -170,6 +170,12 @@ pag_inserir_sobreaviso = st.Page(
     icon="📟",
 )
 
+pag_meio_periodo = st.Page(
+    "views/meio_periodo_page.py",
+    title="Definir Meio de Período",
+    icon="⏱️",
+)
+
 pag_configuracao = st.Page(
     "views/configuracao_page.py",
     title="Configurar e Editar Bases de Dados",
@@ -197,6 +203,7 @@ paginas = {
     "Inserir Dados": [
         pag_inserir_dados,
         pag_inserir_sobreaviso,
+        pag_meio_periodo,
     ],
     "Controle Financeiro": [
         pag_controle_financeiro,
