@@ -1,6 +1,7 @@
 from calendar import monthrange
 from datetime import date
 import re
+import unicodedata
 
 import pandas as pd
 import streamlit as st
@@ -11,6 +12,7 @@ from auxiliar.google_sheets import get_sheet_data
 NOME_ABA_BASE_DADOS = "base_dados"
 NOME_ABA_MEDICOS = "lista_medicos"
 NOME_ABA_SOBREAVISO = "base_sobreaviso"
+NOME_ABA_MEIO_PERIODO = "base_meio_periodo"
 
 
 # ============================================================
@@ -57,13 +59,18 @@ def converter_para_float(valor) -> float:
     if not texto:
         return 0.0
 
-    texto = re.sub(r"[R$\s]", "", texto)
+    texto = re.sub(
+        r"[R$\s]",
+        "",
+        texto,
+    )
 
     if "," in texto and "." in texto:
         if texto.rfind(",") > texto.rfind("."):
             # Formato brasileiro: 1.234,56
             texto = texto.replace(".", "")
             texto = texto.replace(",", ".")
+
         else:
             # Formato internacional: 1,234.56
             texto = texto.replace(",", "")
@@ -96,7 +103,9 @@ def converter_coluna_monetaria(
 
             # Soma 2 para considerar o cabeçalho da planilha
             # e o índice iniciado em zero.
-            linhas_invalidas.append(indice + 2)
+            linhas_invalidas.append(
+                indice + 2
+            )
 
     if linhas_invalidas:
         linhas_texto = ", ".join(
@@ -116,7 +125,9 @@ def converter_coluna_monetaria(
     )
 
 
-def converter_coluna_data(serie: pd.Series) -> pd.Series:
+def converter_coluna_data(
+    serie: pd.Series,
+) -> pd.Series:
     """
     Converte as datas da planilha para datetime.
     """
@@ -127,7 +138,7 @@ def converter_coluna_data(serie: pd.Series) -> pd.Series:
         .str.strip()
     )
 
-    # Formato usado ao salvar pelo formulário.
+    # Formato utilizado pelos formulários.
     datas = pd.to_datetime(
         texto,
         format="%d/%m/%Y",
@@ -153,6 +164,36 @@ def converter_coluna_data(serie: pd.Series) -> pd.Series:
     )
 
     return datas.dt.normalize()
+
+
+def normalizar_texto(valor: str) -> str:
+    """
+    Normaliza textos para permitir o cruzamento dos nomes
+    dos médicos entre diferentes abas.
+    """
+    texto = str(valor).strip().lower()
+
+    texto = unicodedata.normalize(
+        "NFKD",
+        texto,
+    )
+
+    texto = (
+        texto
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
+
+    texto = texto.replace("_", " ")
+    texto = texto.replace("-", " ")
+
+    texto = re.sub(
+        r"\s+",
+        " ",
+        texto,
+    )
+
+    return texto.strip()
 
 
 def validar_colunas(
@@ -190,7 +231,9 @@ with st.container(border=True):
         st.markdown("# 💰")
 
     with coluna_titulo:
-        st.title("Controle financeiro por médico")
+        st.title(
+            "Controle financeiro por médico"
+        )
 
         st.caption(
             "ARLONSP - SERVIÇOS MÉDICOS | "
@@ -203,7 +246,9 @@ with st.container(border=True):
 # ============================================================
 
 try:
-    with st.spinner("Carregando dados financeiros..."):
+    with st.spinner(
+        "Carregando dados financeiros..."
+    ):
         base_dados_df = get_sheet_data(
             NOME_ABA_BASE_DADOS
         ).copy()
@@ -216,12 +261,30 @@ try:
             NOME_ABA_SOBREAVISO
         ).copy()
 
+        base_meio_periodo_df = get_sheet_data(
+            NOME_ABA_MEIO_PERIODO
+        ).copy()
+
 except Exception as error:
     st.error(
         "Não foi possível carregar os dados das planilhas."
     )
+
     st.exception(error)
     st.stop()
+
+
+# Caso a aba esteja completamente vazia.
+if (
+    base_meio_periodo_df.empty
+    and len(base_meio_periodo_df.columns) == 0
+):
+    base_meio_periodo_df = pd.DataFrame(
+        columns=[
+            "data",
+            "medico",
+        ]
+    )
 
 
 # Remove espaços acidentais nos nomes das colunas.
@@ -243,6 +306,16 @@ base_sobreaviso_df.columns = (
     .str.strip()
 )
 
+base_meio_periodo_df.columns = (
+    base_meio_periodo_df.columns
+    .astype(str)
+    .str.strip()
+)
+
+
+# ============================================================
+# Validação das estruturas
+# ============================================================
 
 try:
     validar_colunas(
@@ -279,8 +352,20 @@ try:
         ],
     )
 
+    validar_colunas(
+        base_meio_periodo_df,
+        NOME_ABA_MEIO_PERIODO,
+        [
+            "data",
+            "medico",
+        ],
+    )
+
 except ValueError as error:
-    st.error(str(error))
+    st.error(
+        str(error)
+    )
+
     st.stop()
 
 
@@ -295,8 +380,16 @@ lista_medicos_df["nome_medico"] = (
     .str.strip()
 )
 
+lista_medicos_df["medico_normalizado"] = (
+    lista_medicos_df["nome_medico"]
+    .apply(normalizar_texto)
+)
+
+
 lista_medicos_df = lista_medicos_df.loc[
-    lista_medicos_df["nome_medico"].ne("")
+    lista_medicos_df[
+        "medico_normalizado"
+    ].ne("")
 ].copy()
 
 
@@ -309,13 +402,18 @@ try:
     )
 
 except ValueError as error:
-    st.error(str(error))
+    st.error(
+        str(error)
+    )
+
     st.stop()
 
 
 medicos_duplicados = (
     lista_medicos_df.loc[
-        lista_medicos_df["nome_medico"].duplicated(
+        lista_medicos_df[
+            "medico_normalizado"
+        ].duplicated(
             keep=False
         ),
         "nome_medico",
@@ -329,33 +427,42 @@ if medicos_duplicados:
     st.warning(
         "Existem médicos duplicados na aba `lista_medicos`. "
         "Será utilizado o último valor mínimo cadastrado para: "
-        + ", ".join(medicos_duplicados)
+        + ", ".join(
+            medicos_duplicados
+        )
     )
 
 
 lista_medicos_df = (
     lista_medicos_df
     .drop_duplicates(
-        subset=["nome_medico"],
+        subset=[
+            "medico_normalizado",
+        ],
         keep="last",
     )
     .reset_index(drop=True)
 )
 
 
-nomes_medicos = (
-    lista_medicos_df["nome_medico"]
+nomes_medicos = sorted(
+    lista_medicos_df[
+        "nome_medico"
+    ]
     .dropna()
     .astype(str)
     .str.strip()
-    .tolist()
+    .tolist(),
+    key=normalizar_texto,
 )
 
 
 if not nomes_medicos:
     st.warning(
-        "Nenhum médico foi encontrado na aba `lista_medicos`."
+        "Nenhum médico foi encontrado na aba "
+        "`lista_medicos`."
     )
+
     st.stop()
 
 
@@ -370,13 +477,31 @@ base_dados_df["nome_medico"] = (
     .str.strip()
 )
 
-base_dados_df["data_convertida"] = converter_coluna_data(
-    base_dados_df["data"]
+base_dados_df["medico_normalizado"] = (
+    base_dados_df["nome_medico"]
+    .apply(normalizar_texto)
+)
+
+base_dados_df["numero_atendimento"] = (
+    base_dados_df["numero_atendimento"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+)
+
+base_dados_df["data_convertida"] = (
+    converter_coluna_data(
+        base_dados_df["data"]
+    )
 )
 
 
 quantidade_datas_invalidas = int(
-    base_dados_df["data_convertida"].isna().sum()
+    base_dados_df[
+        "data_convertida"
+    ]
+    .isna()
+    .sum()
 )
 
 
@@ -390,7 +515,7 @@ if quantidade_datas_invalidas:
 
 base_dados_df = base_dados_df.loc[
     base_dados_df["data_convertida"].notna()
-    & base_dados_df["nome_medico"].ne("")
+    & base_dados_df["medico_normalizado"].ne("")
 ].copy()
 
 
@@ -408,7 +533,10 @@ try:
         )
 
 except ValueError as error:
-    st.error(str(error))
+    st.error(
+        str(error)
+    )
+
     st.stop()
 
 
@@ -423,13 +551,24 @@ base_sobreaviso_df["medico"] = (
     .str.strip()
 )
 
-base_sobreaviso_df["data_convertida"] = converter_coluna_data(
-    base_sobreaviso_df["data"]
+base_sobreaviso_df["medico_normalizado"] = (
+    base_sobreaviso_df["medico"]
+    .apply(normalizar_texto)
+)
+
+base_sobreaviso_df["data_convertida"] = (
+    converter_coluna_data(
+        base_sobreaviso_df["data"]
+    )
 )
 
 
 quantidade_datas_sobreaviso_invalidas = int(
-    base_sobreaviso_df["data_convertida"].isna().sum()
+    base_sobreaviso_df[
+        "data_convertida"
+    ]
+    .isna()
+    .sum()
 )
 
 
@@ -443,7 +582,7 @@ if quantidade_datas_sobreaviso_invalidas:
 
 base_sobreaviso_df = base_sobreaviso_df.loc[
     base_sobreaviso_df["data_convertida"].notna()
-    & base_sobreaviso_df["medico"].ne("")
+    & base_sobreaviso_df["medico_normalizado"].ne("")
 ].copy()
 
 
@@ -456,8 +595,71 @@ try:
     )
 
 except ValueError as error:
-    st.error(str(error))
+    st.error(
+        str(error)
+    )
+
     st.stop()
+
+
+# ============================================================
+# Tratamento da base de meio período
+# ============================================================
+
+base_meio_periodo_df["medico"] = (
+    base_meio_periodo_df["medico"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+)
+
+base_meio_periodo_df["medico_normalizado"] = (
+    base_meio_periodo_df["medico"]
+    .apply(normalizar_texto)
+)
+
+base_meio_periodo_df["data_convertida"] = (
+    converter_coluna_data(
+        base_meio_periodo_df["data"]
+    )
+)
+
+
+quantidade_datas_meio_periodo_invalidas = int(
+    base_meio_periodo_df[
+        "data_convertida"
+    ]
+    .isna()
+    .sum()
+)
+
+
+if quantidade_datas_meio_periodo_invalidas:
+    st.warning(
+        f"{quantidade_datas_meio_periodo_invalidas} registro(s) "
+        "da base de meio período possuem uma data inválida e "
+        "não serão considerados."
+    )
+
+
+base_meio_periodo_df = (
+    base_meio_periodo_df.loc[
+        base_meio_periodo_df[
+            "data_convertida"
+        ].notna()
+        & base_meio_periodo_df[
+            "medico_normalizado"
+        ].ne("")
+    ]
+    .drop_duplicates(
+        subset=[
+            "data_convertida",
+            "medico_normalizado",
+        ],
+        keep="last",
+    )
+    .copy()
+)
 
 
 # ============================================================
@@ -466,7 +668,9 @@ except ValueError as error:
 
 hoje = date.today()
 
-primeiro_dia_mes = hoje.replace(day=1)
+primeiro_dia_mes = hoje.replace(
+    day=1
+)
 
 ultimo_dia_mes = hoje.replace(
     day=monthrange(
@@ -481,7 +685,9 @@ ultimo_dia_mes = hoje.replace(
 # ============================================================
 
 with st.container(border=True):
-    st.markdown("### Filtros")
+    st.markdown(
+        "### Filtros"
+    )
 
     coluna_periodo, coluna_medico = st.columns(
         [2, 1]
@@ -515,6 +721,7 @@ if (
     st.info(
         "Selecione a data inicial e a data final do período."
     )
+
     st.stop()
 
 
@@ -528,8 +735,17 @@ if data_inicial > data_final:
     )
 
 
-data_inicial_timestamp = pd.Timestamp(data_inicial)
-data_final_timestamp = pd.Timestamp(data_final)
+data_inicial_timestamp = pd.Timestamp(
+    data_inicial
+).normalize()
+
+data_final_timestamp = pd.Timestamp(
+    data_final
+).normalize()
+
+medico_selecionado_normalizado = normalizar_texto(
+    medico_selecionado
+)
 
 
 # ============================================================
@@ -537,8 +753,10 @@ data_final_timestamp = pd.Timestamp(data_final)
 # ============================================================
 
 registro_medico = lista_medicos_df.loc[
-    lista_medicos_df["nome_medico"].eq(
-        medico_selecionado
+    lista_medicos_df[
+        "medico_normalizado"
+    ].eq(
+        medico_selecionado_normalizado
     )
 ]
 
@@ -553,7 +771,9 @@ if registro_medico.empty:
 
 else:
     valor_minimo_medico = float(
-        registro_medico.iloc[0]["valor_minimo"]
+        registro_medico.iloc[0][
+            "valor_minimo"
+        ]
     )
 
 
@@ -567,8 +787,8 @@ base_filtrada_df = base_dados_df.loc[
         data_final_timestamp,
         inclusive="both",
     )
-    & base_dados_df["nome_medico"].eq(
-        medico_selecionado
+    & base_dados_df["medico_normalizado"].eq(
+        medico_selecionado_normalizado
     )
 ].copy()
 
@@ -579,17 +799,53 @@ sobreaviso_filtrado_df = base_sobreaviso_df.loc[
         data_final_timestamp,
         inclusive="both",
     )
-    & base_sobreaviso_df["medico"].eq(
-        medico_selecionado
+    & base_sobreaviso_df["medico_normalizado"].eq(
+        medico_selecionado_normalizado
     )
 ].copy()
+
+
+meio_periodo_filtrado_df = base_meio_periodo_df.loc[
+    base_meio_periodo_df["data_convertida"].between(
+        data_inicial_timestamp,
+        data_final_timestamp,
+        inclusive="both",
+    )
+    & base_meio_periodo_df[
+        "medico_normalizado"
+    ].eq(
+        medico_selecionado_normalizado
+    )
+].copy()
+
+
+datas_meio_periodo = set(
+    meio_periodo_filtrado_df[
+        "data_convertida"
+    ].tolist()
+)
 
 
 # ============================================================
 # Cálculo dos totais dos atendimentos
 # ============================================================
 
-total_atendimentos = len(base_filtrada_df)
+# Um atendimento pode ocupar várias linhas por causa dos
+# exames e procedimentos. Por isso, a contagem utiliza
+# data + número do atendimento, sem duplicidades.
+total_atendimentos = len(
+    base_filtrada_df.loc[
+        base_filtrada_df[
+            "numero_atendimento"
+        ].ne(""),
+        [
+            "data_convertida",
+            "numero_atendimento",
+        ],
+    ]
+    .drop_duplicates()
+)
+
 
 total_valor_exame = base_filtrada_df[
     "valor_exame"
@@ -613,7 +869,10 @@ if base_filtrada_df.empty:
         columns=[
             "data_convertida",
             "valor_medico",
+            "meio_periodo",
+            "valor_minimo_utilizado",
             "pagar_valor_minimo",
+            "complemento_minimo",
             "valor_apos_minimo",
         ]
     )
@@ -629,18 +888,65 @@ else:
             as_index=False,
         )
         .agg(
-            valor_medico=("valor_medico", "sum")
+            valor_medico=(
+                "valor_medico",
+                "sum",
+            )
         )
     )
 
-    resumo_diario_df["pagar_valor_minimo"] = (
-        resumo_diario_df["valor_medico"]
-        < valor_minimo_medico
+    resumo_diario_df["meio_periodo"] = (
+        resumo_diario_df[
+            "data_convertida"
+        ].isin(
+            datas_meio_periodo
+        )
     )
 
-    resumo_diario_df["valor_apos_minimo"] = (
-        resumo_diario_df["valor_medico"]
-        .clip(lower=valor_minimo_medico)
+    # O valor cadastrado em lista_medicos representa
+    # o mínimo para dois períodos.
+    resumo_diario_df[
+        "valor_minimo_utilizado"
+    ] = valor_minimo_medico
+
+    resumo_diario_df.loc[
+        resumo_diario_df["meio_periodo"],
+        "valor_minimo_utilizado",
+    ] = (
+        valor_minimo_medico / 2
+    )
+
+    resumo_diario_df[
+        "pagar_valor_minimo"
+    ] = (
+        resumo_diario_df[
+            "valor_medico"
+        ]
+        < resumo_diario_df[
+            "valor_minimo_utilizado"
+        ]
+    )
+
+    resumo_diario_df[
+        "valor_apos_minimo"
+    ] = resumo_diario_df[
+        [
+            "valor_medico",
+            "valor_minimo_utilizado",
+        ]
+    ].max(axis=1)
+
+    resumo_diario_df[
+        "complemento_minimo"
+    ] = (
+        resumo_diario_df[
+            "valor_apos_minimo"
+        ]
+        - resumo_diario_df[
+            "valor_medico"
+        ]
+    ).clip(
+        lower=0
     )
 
     total_apos_minimo = resumo_diario_df[
@@ -648,7 +954,9 @@ else:
     ].sum()
 
     quantidade_dias_valor_minimo = int(
-        resumo_diario_df["pagar_valor_minimo"].sum()
+        resumo_diario_df[
+            "pagar_valor_minimo"
+        ].sum()
     )
 
 
@@ -673,7 +981,9 @@ total_final_medico = (
 # Cards
 # ============================================================
 
-st.markdown("### Totais do período")
+st.markdown(
+    "### Totais do período"
+)
 
 
 coluna_1, coluna_2, coluna_3 = st.columns(3)
@@ -687,13 +997,17 @@ with coluna_1:
 with coluna_2:
     st.metric(
         "Valor dos exames",
-        formatar_moeda(total_valor_exame),
+        formatar_moeda(
+            total_valor_exame
+        ),
     )
 
 with coluna_3:
     st.metric(
         "Taxa do aparelho",
-        formatar_moeda(total_taxa_aparelho),
+        formatar_moeda(
+            total_taxa_aparelho
+        ),
     )
 
 
@@ -702,7 +1016,9 @@ coluna_4, coluna_5, coluna_6 = st.columns(3)
 with coluna_4:
     st.metric(
         "Valor médico",
-        formatar_moeda(total_valor_medico),
+        formatar_moeda(
+            total_valor_medico
+        ),
         help=(
             "Soma dos valores dos atendimentos antes da "
             "aplicação do valor mínimo diário."
@@ -712,7 +1028,9 @@ with coluna_4:
 with coluna_5:
     st.metric(
         "Valor sobreaviso",
-        formatar_moeda(total_sobreaviso),
+        formatar_moeda(
+            total_sobreaviso
+        ),
         help=(
             "Soma dos sobreavisos registrados para o médico "
             "no período selecionado."
@@ -722,12 +1040,16 @@ with coluna_5:
 with coluna_6:
     st.metric(
         "Valor final médico",
-        formatar_moeda(total_final_medico),
+        formatar_moeda(
+            total_final_medico
+        ),
         delta=(
             formatar_moeda(
-                total_final_medico - total_valor_medico
+                total_final_medico
+                - total_valor_medico
             )
-            if total_final_medico > total_valor_medico
+            if total_final_medico
+            > total_valor_medico
             else None
         ),
         help=(
@@ -738,17 +1060,34 @@ with coluna_6:
 
 
 if quantidade_dias_valor_minimo:
+    quantidade_minimo_meio_periodo = int(
+        resumo_diario_df.loc[
+            resumo_diario_df[
+                "pagar_valor_minimo"
+            ],
+            "meio_periodo",
+        ].sum()
+    )
+
+    quantidade_minimo_periodo_completo = (
+        quantidade_dias_valor_minimo
+        - quantidade_minimo_meio_periodo
+    )
+
     st.info(
-        f"O valor mínimo de "
-        f"{formatar_moeda(valor_minimo_medico)} foi aplicado em "
-        f"{quantidade_dias_valor_minimo} dia(s) do período."
+        f"O pagamento mínimo foi aplicado em "
+        f"{quantidade_dias_valor_minimo} dia(s): "
+        f"{quantidade_minimo_meio_periodo} de meio período "
+        f"e {quantidade_minimo_periodo_completo} de período "
+        "completo."
     )
 
 else:
     st.caption(
-        f"Valor mínimo diário cadastrado para "
-        f"{medico_selecionado}: "
-        f"{formatar_moeda(valor_minimo_medico)}."
+        f"Valor mínimo cadastrado para dois períodos: "
+        f"{formatar_moeda(valor_minimo_medico)}. "
+        f"Valor mínimo de meio período: "
+        f"{formatar_moeda(valor_minimo_medico / 2)}."
     )
 
 
@@ -756,7 +1095,9 @@ else:
 # Tabela de atendimentos sem agrupamento
 # ============================================================
 
-st.markdown("### Atendimentos")
+st.markdown(
+    "### Atendimentos"
+)
 
 st.caption(
     f"Atendimentos de {medico_selecionado} entre "
@@ -784,31 +1125,40 @@ else:
         ]
     ].copy()
 
-    tabela_exibicao_df = tabela_exibicao_df.sort_values(
-        [
-            "data_convertida",
-            "numero_atendimento",
-        ],
-        ascending=[
-            True,
-            True,
-        ],
+    tabela_exibicao_df = (
+        tabela_exibicao_df.sort_values(
+            [
+                "data_convertida",
+                "numero_atendimento",
+            ],
+            ascending=[
+                True,
+                True,
+            ],
+        )
     )
 
-    tabela_exibicao_df = tabela_exibicao_df.rename(
-        columns={
-            "data_convertida": "Data",
-            "numero_atendimento": "Número do atendimento",
-            "nome_paciente": "Paciente",
-            "nome_exame": "Exame",
-            "valor_exame": "Valor do exame",
-            "taxa_aparelho": "Taxa do aparelho",
-            "valor_medico": "Valor médico",
-        }
+    tabela_exibicao_df = (
+        tabela_exibicao_df.rename(
+            columns={
+                "data_convertida": "Data",
+                "numero_atendimento": (
+                    "Número do atendimento"
+                ),
+                "nome_paciente": "Paciente",
+                "nome_exame": "Exame",
+                "valor_exame": "Valor do exame",
+                "taxa_aparelho": (
+                    "Taxa do aparelho"
+                ),
+                "valor_medico": "Valor médico",
+            }
+        )
     )
 
     tabela_exibicao_df["Data"] = (
-        tabela_exibicao_df["Data"].dt.date
+        tabela_exibicao_df["Data"]
+        .dt.date
     )
 
     st.dataframe(
@@ -826,13 +1176,17 @@ else:
                     width="medium",
                 )
             ),
-            "Paciente": st.column_config.TextColumn(
-                "Paciente",
-                width="large",
+            "Paciente": (
+                st.column_config.TextColumn(
+                    "Paciente",
+                    width="large",
+                )
             ),
-            "Exame": st.column_config.TextColumn(
-                "Exame",
-                width="large",
+            "Exame": (
+                st.column_config.TextColumn(
+                    "Exame",
+                    width="large",
+                )
             ),
             "Valor do exame": (
                 st.column_config.NumberColumn(
@@ -860,7 +1214,9 @@ else:
 # Tabela de sobreavisos
 # ============================================================
 
-st.markdown("### Sobreavisos")
+st.markdown(
+    "### Sobreavisos"
+)
 
 st.caption(
     f"Sobreavisos de {medico_selecionado} entre "
@@ -876,7 +1232,7 @@ if sobreaviso_filtrado_df.empty:
     )
 
 else:
-    # Agrupa por dia. Caso existam dois registros no mesmo dia,
+    # Caso existam dois registros no mesmo dia,
     # os valores serão somados.
     tabela_sobreaviso_df = (
         sobreaviso_filtrado_df
@@ -885,20 +1241,28 @@ else:
             as_index=False,
         )
         .agg(
-            valor=("valor", "sum")
+            valor=(
+                "valor",
+                "sum",
+            )
         )
-        .sort_values("data_convertida")
+        .sort_values(
+            "data_convertida"
+        )
     )
 
-    tabela_sobreaviso_df = tabela_sobreaviso_df.rename(
-        columns={
-            "data_convertida": "Data",
-            "valor": "Valor sobreaviso",
-        }
+    tabela_sobreaviso_df = (
+        tabela_sobreaviso_df.rename(
+            columns={
+                "data_convertida": "Data",
+                "valor": "Valor sobreaviso",
+            }
+        )
     )
 
     tabela_sobreaviso_df["Data"] = (
-        tabela_sobreaviso_df["Data"].dt.date
+        tabela_sobreaviso_df["Data"]
+        .dt.date
     )
 
     st.dataframe(
@@ -914,6 +1278,146 @@ else:
                 st.column_config.NumberColumn(
                     "Valor sobreaviso",
                     format="R$ %.2f",
+                )
+            ),
+        },
+    )
+
+
+# ============================================================
+# Tabela de pagamentos pelo valor mínimo
+# ============================================================
+
+st.markdown(
+    "### Pagamentos pelo valor mínimo"
+)
+
+st.caption(
+    "São exibidos somente os dias em que o valor calculado "
+    "pelos atendimentos ficou abaixo do valor mínimo aplicável. "
+    "O sobreaviso não está incluído no valor pago nesta tabela."
+)
+
+
+if (
+    resumo_diario_df.empty
+    or not resumo_diario_df[
+        "pagar_valor_minimo"
+    ].any()
+):
+    st.info(
+        "Nenhum pagamento pelo valor mínimo foi necessário "
+        "para o médico e período selecionados."
+    )
+
+else:
+    tabela_pagamentos_minimos_df = (
+        resumo_diario_df.loc[
+            resumo_diario_df[
+                "pagar_valor_minimo"
+            ],
+            [
+                "data_convertida",
+                "meio_periodo",
+                "valor_medico",
+                "valor_minimo_utilizado",
+                "complemento_minimo",
+                "valor_apos_minimo",
+            ],
+        ]
+        .copy()
+        .sort_values(
+            "data_convertida"
+        )
+    )
+
+    tabela_pagamentos_minimos_df = (
+        tabela_pagamentos_minimos_df.rename(
+            columns={
+                "data_convertida": "Data",
+                "meio_periodo": "Meio período",
+                "valor_medico": (
+                    "Valor médico calculado"
+                ),
+                "valor_minimo_utilizado": (
+                    "Valor mínimo utilizado"
+                ),
+                "complemento_minimo": (
+                    "Complemento do mínimo"
+                ),
+                "valor_apos_minimo": (
+                    "Valor pago no dia"
+                ),
+            }
+        )
+    )
+
+    tabela_pagamentos_minimos_df["Data"] = (
+        tabela_pagamentos_minimos_df[
+            "Data"
+        ].dt.date
+    )
+
+    st.dataframe(
+        tabela_pagamentos_minimos_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Data": (
+                st.column_config.DateColumn(
+                    "Data",
+                    format="DD/MM/YYYY",
+                )
+            ),
+            "Meio período": (
+                st.column_config.CheckboxColumn(
+                    "Meio período",
+                    help=(
+                        "Quando marcado, o valor mínimo "
+                        "utilizado é metade do valor "
+                        "cadastrado para o médico."
+                    ),
+                )
+            ),
+            "Valor médico calculado": (
+                st.column_config.NumberColumn(
+                    "Valor médico calculado",
+                    format="R$ %.2f",
+                    help=(
+                        "Soma dos valores do médico "
+                        "antes da aplicação do mínimo."
+                    ),
+                )
+            ),
+            "Valor mínimo utilizado": (
+                st.column_config.NumberColumn(
+                    "Valor mínimo utilizado",
+                    format="R$ %.2f",
+                    help=(
+                        "Valor mínimo completo ou metade "
+                        "do mínimo nos dias de meio período."
+                    ),
+                )
+            ),
+            "Complemento do mínimo": (
+                st.column_config.NumberColumn(
+                    "Complemento do mínimo",
+                    format="R$ %.2f",
+                    help=(
+                        "Diferença acrescentada para atingir "
+                        "o valor mínimo do dia."
+                    ),
+                )
+            ),
+            "Valor pago no dia": (
+                st.column_config.NumberColumn(
+                    "Valor pago no dia",
+                    format="R$ %.2f",
+                    help=(
+                        "Valor pago pelos atendimentos depois "
+                        "da aplicação do mínimo. Não inclui "
+                        "sobreaviso."
+                    ),
                 )
             ),
         },
