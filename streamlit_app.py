@@ -194,6 +194,11 @@ pag_controle_medico = st.Page(
     icon="🩺",
 )
 
+pag_download = st.Page(
+    "views/download_page.py",
+    title="Download de Dados",
+    icon="⬇️",
+)
 
 # ============================================================
 # Navegação
@@ -208,6 +213,7 @@ paginas = {
     "Controle Financeiro": [
         pag_controle_financeiro,
         pag_controle_medico,
+        pag_download
     ],
     "Configurações": [
         pag_configuracao,
