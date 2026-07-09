@@ -195,7 +195,7 @@ pag_controle_medico = st.Page(
 )
 
 pag_download = st.Page(
-    "views/download_page.py",
+    "views/download_planilha_page.py",
     title="Download de Dados",
     icon="⬇️",
 )
