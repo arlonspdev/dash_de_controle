@@ -994,14 +994,13 @@ with st.container(border=True):
             * len(itens_exames)
         )
 
-        quantidade_procedimentos = sum(
-            len(item["procedimentos"])
-            for item in itens_exames
+        quantidade_exames = len(
+            itens_exames
         )
 
         (
             coluna_total_exames,
-            coluna_total_procedimentos,
+            coluna_quantidade_exames,
             coluna_total_medico,
             coluna_total_taxa,
         ) = st.columns(4)
@@ -1014,10 +1013,10 @@ with st.container(border=True):
                 ),
             )
 
-        with coluna_total_procedimentos:
+        with coluna_quantidade_exames:
             st.metric(
-                "Procedimentos",
-                quantidade_procedimentos,
+                "Exames",
+                quantidade_exames,
             )
 
         with coluna_total_medico:
