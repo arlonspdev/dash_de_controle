@@ -79,12 +79,6 @@ with st.container(border=True):
     st.markdown("### Observações")
 
     st.info(
-        "As informações exibidas no app são carregadas a partir "
-        "da planilha principal do sistema. Alterações feitas nas "
-        "bases de dados podem afetar os cálculos e relatórios."
+        "Não há observações no momento."
     )
 
-    st.caption(
-        "Em caso de inconsistências, confira primeiro se as abas "
-        "da planilha estão preenchidas corretamente."
-    )
