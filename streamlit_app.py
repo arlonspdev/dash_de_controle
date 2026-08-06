@@ -200,6 +200,11 @@ pag_download = st.Page(
     icon="⬇️",
 )
 
+pag_about = st.Page(
+    "views/about.py",
+    title="Sobre o App",
+    icon="ℹ️",
+)
 # ============================================================
 # Navegação
 # ============================================================
@@ -218,6 +223,9 @@ paginas = {
     "Configurações": [
         pag_configuracao,
     ],
+    "About":[
+        pag_about,
+    ]
 }
 
 
