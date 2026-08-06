@@ -327,6 +327,12 @@ if "quantidade_blocos_exames" not in st.session_state:
     ] = 1
 
 
+if "ultima_data_atendimento" not in st.session_state:
+    st.session_state[
+        "ultima_data_atendimento"
+    ] = date.today()
+
+
 mensagem_sucesso = st.session_state.pop(
     "mensagem_sucesso_atendimento",
     None,
@@ -604,7 +610,9 @@ with st.container(border=True):
     with coluna_data:
         data_atendimento = st.date_input(
             "Data do atendimento",
-            value=date.today(),
+            value=st.session_state[
+                "ultima_data_atendimento"
+            ],
             format="DD/MM/YYYY",
             key=(
                 f"data_atendimento_"
@@ -1165,6 +1173,10 @@ if salvar_dados:
             f"{quantidade_linhas} registro(s) foram "
             "adicionados à base."
         )
+
+        st.session_state[
+            "ultima_data_atendimento"
+        ] = data_atendimento
 
         st.session_state[
             "versao_formulario_atendimento"
