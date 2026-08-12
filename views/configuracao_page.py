@@ -21,7 +21,7 @@ EMAIL_EDICAO_PLANILHA = "arlonspdev@gmail.com"
 BASES_DISPONIVEIS = {
     "Médicos": {
         "aba": "lista_medicos",
-        "descricao": "Cadastro dos médicos e valores mínimos.",
+        "descricao": "Cadastro dos médicos, valores mínimos e PIX.",
     },
     "Exames": {
         "aba": "lista_exames",

@@ -1184,10 +1184,7 @@ if quantidade_dias_valor_minimo:
 else:
     st.caption(
         f"Valor mínimo cadastrado para dois períodos: "
-        f"{formatar_moeda(valor_minimo_medico)}. "
-        f"Valor mínimo de meio período: "
-        f"{formatar_moeda(valor_minimo_medico / 2)}. "
-        "O auxílio é somado ao total final separadamente."
+        f"{formatar_moeda(valor_minimo_medico)}."
     )
 
 
