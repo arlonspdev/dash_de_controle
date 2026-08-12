@@ -189,7 +189,7 @@ pag_controle_financeiro = st.Page(
 )
 
 pag_controle_medico = st.Page(
-    "views/controle_medico_page.py",
+    "views/controle_medico_page_com_pdf.py",
     title="Controle Financeiro - Médico",
     icon="🩺",
 )
