@@ -671,6 +671,59 @@ with st.container(border=True):
             ),
         )
 
+    coluna_medico_auxiliar, coluna_valor_auxilio = (
+        st.columns(2)
+    )
+
+    with coluna_medico_auxiliar:
+        medico_auxiliar = st.selectbox(
+            "Médico auxiliar — opcional",
+            options=nomes_medicos,
+            index=None,
+            placeholder=(
+                "Selecione um médico auxiliar, se houver"
+            ),
+            key=(
+                f"medico_auxiliar_"
+                f"{versao_formulario}"
+            ),
+        )
+
+    with coluna_valor_auxilio:
+        valor_auxilio_texto = st.text_input(
+            "Valor do auxílio — opcional",
+            placeholder="Ex.: 150,00",
+            key=(
+                f"valor_auxilio_"
+                f"{versao_formulario}"
+            ),
+        )
+
+
+# ============================================================
+# Tratamento do valor do auxílio
+# ============================================================
+
+valor_auxilio = 0.0
+valor_auxilio_valido = True
+
+
+if valor_auxilio_texto.strip():
+    try:
+        valor_auxilio = converter_para_float(
+            valor_auxilio_texto
+        )
+
+    except ValueError as error:
+        valor_auxilio_valido = False
+
+        st.error(
+            "O valor do auxílio não está em um formato válido. "
+            "Use valores como 150, 150,00 ou R$ 150,00."
+        )
+
+        st.exception(error)
+
 
 # ============================================================
 # Exames e procedimentos
@@ -837,6 +890,7 @@ campos_comuns_validos = all(
 dados_validos = (
     campos_comuns_validos
     and itens_exames_validos
+    and valor_auxilio_valido
 )
 
 
@@ -872,6 +926,11 @@ with st.container(border=True):
                 "exames"
             )
 
+        if not valor_auxilio_valido:
+            mensagens_pendentes.append(
+                "valor do auxílio válido"
+            )
+
         st.info(
             "Preencha corretamente: "
             + ", ".join(mensagens_pendentes)
@@ -899,14 +958,24 @@ with st.container(border=True):
                 f"{nome_paciente.strip()}"
             )
 
-        with coluna_resumo_2:
-            st.markdown(
-                f"**Médico:** {nome_medico}"
-            )
-
             st.markdown(
                 f"**Convênio:** "
                 f"{convenio_selecionado or 'Não informado'}"
+            )
+
+        with coluna_resumo_2:
+            st.markdown(
+                f"**Médico responsável:** {nome_medico}"
+            )
+
+            st.markdown(
+                f"**Médico auxiliar:** "
+                f"{medico_auxiliar or 'Não informado'}"
+            )
+
+            st.markdown(
+                f"**Valor do auxílio:** "
+                f"{formatar_moeda(valor_auxilio)}"
             )
 
             st.markdown(
@@ -1011,7 +1080,8 @@ with st.container(border=True):
             coluna_quantidade_exames,
             coluna_total_medico,
             coluna_total_taxa,
-        ) = st.columns(4)
+            coluna_valor_auxilio,
+        ) = st.columns(5)
 
         with coluna_total_exames:
             st.metric(
@@ -1043,12 +1113,22 @@ with st.container(border=True):
                 ),
             )
 
+        with coluna_valor_auxilio:
+            st.metric(
+                "Valor auxílio",
+                formatar_moeda(
+                    valor_auxilio
+                ),
+            )
+
         st.caption(
             "Para exames com procedimentos, será criada uma "
             "linha para cada procedimento. Para exames sem "
             "procedimentos, será criada uma linha com a coluna "
             "`procedimentos` vazia. Os valores financeiros são "
-            "registrados apenas na primeira linha de cada exame."
+            "registrados apenas na primeira linha de cada exame. "
+            "O valor do auxílio é registrado somente na primeira "
+            "linha do atendimento."
         )
 
 
@@ -1077,8 +1157,11 @@ if salvar_dados:
         convenio_selecionado or ""
     )
 
-    novas_linhas = []
+    medico_auxiliar_para_salvar = (
+        medico_auxiliar or ""
+    )
 
+    novas_linhas = []
 
     for item in itens_exames:
         # Quando não houver procedimento, cria uma única
@@ -1096,6 +1179,10 @@ if salvar_dados:
                 indice_procedimento == 0
             )
 
+            primeira_linha_do_atendimento = (
+                len(novas_linhas) == 0
+            )
+
             if procedimento is None:
                 procedimento_para_salvar = ""
 
@@ -1107,8 +1194,8 @@ if salvar_dados:
                     )
                 )
 
-            # Os valores financeiros são incluídos somente
-            # na primeira linha de cada exame.
+            # Os valores financeiros do exame são incluídos
+            # somente na primeira linha de cada exame.
             #
             # Isso evita que os valores sejam duplicados
             # quando um exame possui vários procedimentos.
@@ -1131,6 +1218,36 @@ if salvar_dados:
                 else 0.0
             )
 
+            # O auxílio pertence ao atendimento como um todo,
+            # então é salvo somente na primeira linha gerada.
+
+            medico_auxiliar_linha = (
+                medico_auxiliar_para_salvar
+                if primeira_linha_do_atendimento
+                else ""
+            )
+
+            valor_auxilio_linha = (
+                valor_auxilio
+                if primeira_linha_do_atendimento
+                else 0.0
+            )
+
+            # Ordem das colunas da aba base_dados:
+            #
+            # data
+            # numero_atendimento
+            # nome_paciente
+            # convenio
+            # nome_medico
+            # nome_exame
+            # procedimentos
+            # valor_exame
+            # taxa_aparelho
+            # valor_medico
+            # medico_auxiliar
+            # valor_auxilio
+
             nova_linha = [
                 data_atendimento.strftime(
                     "%d/%m/%Y"
@@ -1144,6 +1261,8 @@ if salvar_dados:
                 valor_exame_linha,
                 taxa_aparelho_linha,
                 valor_medico_linha,
+                medico_auxiliar_linha,
+                valor_auxilio_linha,
             ]
 
             novas_linhas.append(
