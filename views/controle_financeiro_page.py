@@ -395,10 +395,8 @@ def abrir_dialogo_editar_dados(
     """
     st.caption(
         "Desmarque um dia quando o valor mínimo não deve ser "
-        "pago para aquele médico, mesmo que o cálculo indique "
-        "que seria necessário. Marque novamente para voltar "
-        "ao cálculo automático. Essa marcação vale para todos "
-        "os resumos financeiros do sistema."
+        "pago para aquele médico. Marque novamente para voltar "
+        "ao cálculo automático."
     )
 
     if linhas_editaveis_df.empty:
@@ -1996,57 +1994,6 @@ exibir_cards(
 
 
 # ============================================================
-# Edição do pagamento do valor mínimo
-# ============================================================
-
-with st.container(border=True):
-    st.markdown(
-        "### Editar dados"
-    )
-
-    st.caption(
-        "Marque, por dia e médico, quando o valor mínimo não "
-        "deve ser calculado. Essa marcação vale para todos os "
-        "resumos financeiros do sistema."
-    )
-
-    editar_dados_clicado = st.button(
-        "📝 Editar dados",
-        type="secondary",
-        use_container_width=True,
-    )
-
-
-if editar_dados_clicado:
-    linhas_editaveis_df = (
-        resumo_financeiro_df.loc[
-            resumo_financeiro_df[
-                "quantidade_atendimentos"
-            ] > 0,
-            [
-                "data_convertida",
-                "medico_normalizado",
-                "nome_medico",
-                "valor_final_medico",
-                "pagar_valor_minimo",
-            ],
-        ]
-        .sort_values(
-            [
-                "data_convertida",
-                "nome_medico",
-            ]
-        )
-        .reset_index(drop=True)
-    )
-
-    abrir_dialogo_editar_dados(
-        linhas_editaveis_df=linhas_editaveis_df,
-        base_isencao_minimo_df=base_isencao_minimo_df,
-    )
-
-
-# ============================================================
 # Tabela para exibição
 # ============================================================
 
@@ -2226,3 +2173,39 @@ st.dataframe(
         ),
     },
 )
+
+
+editar_dados_clicado = st.button(
+    "📝 Editar dados",
+    type="secondary",
+    use_container_width=True,
+)
+
+
+if editar_dados_clicado:
+    linhas_editaveis_df = (
+        resumo_financeiro_df.loc[
+            resumo_financeiro_df[
+                "quantidade_atendimentos"
+            ] > 0,
+            [
+                "data_convertida",
+                "medico_normalizado",
+                "nome_medico",
+                "valor_final_medico",
+                "pagar_valor_minimo",
+            ],
+        ]
+        .sort_values(
+            [
+                "data_convertida",
+                "nome_medico",
+            ]
+        )
+        .reset_index(drop=True)
+    )
+
+    abrir_dialogo_editar_dados(
+        linhas_editaveis_df=linhas_editaveis_df,
+        base_isencao_minimo_df=base_isencao_minimo_df,
+    )
