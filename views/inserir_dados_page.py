@@ -171,47 +171,24 @@ def obter_lista_unica(
 
 def formatar_procedimentos(
     procedimentos_selecionados: list[str],
-    incluir_apostrofo: bool = False,
 ) -> str:
     """
-    Formata uma lista de procedimentos.
+    Junta uma lista de procedimentos em uma única string.
 
-    Exibição:
-        +Polipectomia +Mucosectomia
+    Exemplo:
+        Polipectomia; Mucosectomia
 
-    Google Sheets:
-        '+Polipectomia +Mucosectomia
+    Não usa "+" como prefixo: uma célula do Google Sheets que
+    começa com "+" é interpretada como fórmula, o que já causou
+    erros (#NAME?) na planilha.
     """
-    procedimentos_formatados = []
+    procedimentos_formatados = [
+        str(procedimento).strip()
+        for procedimento in procedimentos_selecionados
+        if str(procedimento).strip()
+    ]
 
-    for procedimento in procedimentos_selecionados:
-        procedimento_limpo = str(
-            procedimento
-        ).strip()
-
-        if procedimento_limpo.startswith("'"):
-            procedimento_limpo = (
-                procedimento_limpo[1:].strip()
-            )
-
-        if procedimento_limpo.startswith("+"):
-            procedimento_limpo = (
-                procedimento_limpo[1:].strip()
-            )
-
-        if procedimento_limpo:
-            procedimentos_formatados.append(
-                f"+{procedimento_limpo}"
-            )
-
-    texto_formatado = " ".join(
-        procedimentos_formatados
-    )
-
-    if incluir_apostrofo and texto_formatado:
-        return f"'{texto_formatado}"
-
-    return texto_formatado
+    return "; ".join(procedimentos_formatados)
 
 
 def obter_taxa_aparelho(
@@ -990,8 +967,7 @@ with st.container(border=True):
         for item in itens_exames:
             procedimentos_exibicao = (
                 formatar_procedimentos(
-                    item["procedimentos"],
-                    incluir_apostrofo=False,
+                    item["procedimentos"]
                 )
             )
 
@@ -1187,12 +1163,9 @@ if salvar_dados:
                 procedimento_para_salvar = ""
 
             else:
-                procedimento_para_salvar = (
-                    formatar_procedimentos(
-                        [procedimento],
-                        incluir_apostrofo=True,
-                    )
-                )
+                procedimento_para_salvar = str(
+                    procedimento
+                ).strip()
 
             # Os valores financeiros do exame são incluídos
             # somente na primeira linha de cada exame.
