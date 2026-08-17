@@ -1,4 +1,4 @@
-streamlit>=1.36
+streamlit>=1.61.1
 starlette<0.48
 pandas
 gspread

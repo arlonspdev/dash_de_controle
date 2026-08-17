@@ -416,18 +416,29 @@ def normalizar_procedimentos(valor) -> str:
     "Editar dados",
     width="large",
 )
-def abrir_dialogo_editar_base_dados() -> None:
+def abrir_dialogo_editar_base_dados(
+    data_inicial: date,
+    data_final: date,
+    data_inicial_timestamp: pd.Timestamp,
+    data_final_timestamp: pd.Timestamp,
+) -> None:
     """
-    Permite editar diretamente todos os registros da aba
-    base_dados, com campos inteligentes (data, listas de
-    seleção e lista de procedimentos) para reduzir erros
-    de digitação.
+    Permite editar os registros da aba base_dados no período
+    selecionado na página, com campos inteligentes (data,
+    listas de seleção e múltipla seleção de procedimentos)
+    para reduzir erros de digitação.
+
+    Registros fora do período selecionado não são exibidos,
+    mas são preservados ao salvar.
     """
     st.caption(
-        "Edite os dados diretamente. Convênio, médico, exame "
-        "e procedimentos usam listas para evitar erros de "
-        "digitação. Ao salvar, toda a aba `base_dados` será "
-        "substituída pelos dados exibidos abaixo."
+        f"Exibindo atendimentos de "
+        f"{data_inicial.strftime('%d/%m/%Y')} até "
+        f"{data_final.strftime('%d/%m/%Y')}. Convênio, "
+        "médico, exame e procedimentos usam listas para "
+        "evitar erros de digitação. Ao salvar, os registros "
+        "desse período são substituídos pelos dados exibidos "
+        "abaixo; os demais registros da base não são alterados."
     )
 
     try:
@@ -472,13 +483,47 @@ def abrir_dialogo_editar_base_dados() -> None:
         if coluna not in base_dados_bruta_df.columns:
             base_dados_bruta_df[coluna] = ""
 
+    base_dados_bruta_df["data_convertida"] = (
+        converter_coluna_data(
+            base_dados_bruta_df["data"]
+        )
+    )
+
+    mascara_periodo = (
+        base_dados_bruta_df["data_convertida"].between(
+            data_inicial_timestamp,
+            data_final_timestamp,
+            inclusive="both",
+        )
+    )
+
+    # Registros fora do período (ou com data inválida) não
+    # são exibidos no editor, mas precisam ser preservados
+    # exatamente como estão ao salvar.
+    linhas_fora_periodo_df = (
+        base_dados_bruta_df.loc[
+            ~mascara_periodo,
+            COLUNAS_BASE_DADOS_EDITAVEL,
+        ]
+        .copy()
+    )
+
     tabela_editor_df = (
-        base_dados_bruta_df[
-            COLUNAS_BASE_DADOS_EDITAVEL
+        base_dados_bruta_df.loc[
+            mascara_periodo,
+            COLUNAS_BASE_DADOS_EDITAVEL,
         ]
         .copy()
         .reset_index(drop=True)
     )
+
+    if tabela_editor_df.empty:
+        st.info(
+            "Nenhum atendimento foi encontrado no período "
+            "selecionado."
+        )
+
+        return
 
     # --------------------------------------------------------
     # Opções das listas de seleção
@@ -536,11 +581,19 @@ def abrir_dialogo_editar_base_dados() -> None:
         else []
     )
 
-    if procedimentos_disponiveis:
-        st.caption(
-            "Procedimentos cadastrados: "
-            + ", ".join(procedimentos_disponiveis)
-        )
+    procedimentos_existentes: set[str] = set()
+
+    for texto in tabela_editor_df["procedimentos"].fillna(""):
+        for item in normalizar_procedimentos(texto).split(";"):
+            item_limpo = item.strip()
+
+            if item_limpo:
+                procedimentos_existentes.add(item_limpo)
+
+    opcoes_procedimento = sorted(
+        set(procedimentos_disponiveis) | procedimentos_existentes,
+        key=normalizar_texto,
+    )
 
     # --------------------------------------------------------
     # Tratamento dos tipos para o editor
@@ -652,13 +705,16 @@ def abrir_dialogo_editar_base_dados() -> None:
                 options=opcoes_exame,
                 width="medium",
             ),
-            "Procedimentos": st.column_config.ListColumn(
-                "Procedimentos",
-                help=(
-                    "Adicione um ou mais procedimentos. "
-                    "Pressione Enter após cada um."
-                ),
-                width="large",
+            "Procedimentos": (
+                st.column_config.MultiselectColumn(
+                    "Procedimentos",
+                    help=(
+                        "Selecione um ou mais procedimentos "
+                        "cadastrados."
+                    ),
+                    options=opcoes_procedimento,
+                    width="large",
+                )
             ),
             "Valor do exame": (
                 st.column_config.NumberColumn(
@@ -700,8 +756,11 @@ def abrir_dialogo_editar_base_dados() -> None:
     )
 
     st.warning(
-        "Ao salvar, todo o conteúdo da aba `base_dados` será "
-        "substituído pelos dados exibidos acima."
+        "Ao salvar, os atendimentos do período "
+        f"{data_inicial.strftime('%d/%m/%Y')} a "
+        f"{data_final.strftime('%d/%m/%Y')} serão substituídos "
+        "pelos dados exibidos acima. Os demais registros da "
+        "aba `base_dados` não são alterados."
     )
 
     salvar_clicado = st.button(
@@ -773,13 +832,43 @@ def abrir_dialogo_editar_base_dados() -> None:
         COLUNAS_BASE_DADOS_EDITAVEL
     ]
 
+    # Reúne os registros editados do período com os registros
+    # fora do período (preservados sem nenhuma alteração).
+    base_final_df = pd.concat(
+        [
+            linhas_fora_periodo_df,
+            tabela_para_salvar_df,
+        ],
+        ignore_index=True,
+    )
+
+    base_final_df["data_convertida"] = (
+        converter_coluna_data(
+            base_final_df["data"]
+        )
+    )
+
+    base_final_df = (
+        base_final_df
+        .sort_values(
+            "data_convertida",
+            kind="stable",
+        )
+        .drop(
+            columns=[
+                "data_convertida",
+            ]
+        )
+        .reset_index(drop=True)
+    )
+
     try:
         with st.spinner(
             "Salvando alterações..."
         ):
             set_sheet_data(
                 NOME_ABA_BASE_DADOS,
-                tabela_para_salvar_df,
+                base_final_df,
             )
 
         st.session_state[
@@ -1495,7 +1584,12 @@ editar_dados_clicado = st.button(
 )
 
 if editar_dados_clicado:
-    abrir_dialogo_editar_base_dados()
+    abrir_dialogo_editar_base_dados(
+        data_inicial=data_inicial,
+        data_final=data_final,
+        data_inicial_timestamp=data_inicial_timestamp,
+        data_final_timestamp=data_final_timestamp,
+    )
 
 
 # ============================================================
