@@ -216,6 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+secrets.toml
 
 # Credential files
 credentials/

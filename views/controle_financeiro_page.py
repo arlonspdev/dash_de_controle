@@ -6,13 +6,18 @@ import unicodedata
 import pandas as pd
 import streamlit as st
 
-from auxiliar.google_sheets import get_sheet_data
+from auxiliar.google_sheets import (
+    get_or_create_sheet_data,
+    get_sheet_data,
+    set_sheet_data,
+)
 
 
 NOME_ABA_BASE_DADOS = "base_dados"
 NOME_ABA_MEDICOS = "lista_medicos"
 NOME_ABA_SOBREAVISO = "base_sobreaviso"
 NOME_ABA_MEIO_PERIODO = "base_meio_periodo"
+NOME_ABA_ISENCAO_MINIMO = "base_isencao_valor_minimo"
 
 TODOS_OS_MEDICOS = "Todos os médicos"
 
@@ -223,6 +228,318 @@ def validar_colunas(
         )
 
 
+def montar_base_isencao_final(
+    base_isencao_minimo_df: pd.DataFrame,
+    pares_exibidos: set,
+    pares_marcados: set,
+    nomes_por_medico_normalizado: dict,
+) -> pd.DataFrame:
+    """
+    Atualiza somente os pares (data, médico) exibidos no
+    diálogo de edição.
+
+    Pares de outras datas ou médicos permanecem inalterados,
+    igual ao comportamento usado para meio período.
+    """
+    base_atual = base_isencao_minimo_df.copy()
+
+    chaves_atuais = list(
+        zip(
+            base_atual["data_convertida"],
+            base_atual["medico_normalizado"],
+        )
+    )
+
+    mascara_exibidos = pd.Series(
+        chaves_atuais,
+        index=base_atual.index,
+    ).isin(pares_exibidos)
+
+    base_preservada = base_atual.loc[
+        ~mascara_exibidos,
+        [
+            "data",
+            "medico",
+        ],
+    ].copy()
+
+    novos_registros = pd.DataFrame(
+        [
+            {
+                "data": data_isencao.strftime(
+                    "%d/%m/%Y"
+                ),
+                "medico": nomes_por_medico_normalizado.get(
+                    medico_normalizado,
+                    medico_normalizado,
+                ),
+            }
+            for (
+                data_isencao,
+                medico_normalizado,
+            ) in sorted(pares_marcados)
+        ],
+        columns=[
+            "data",
+            "medico",
+        ],
+    )
+
+    base_final = pd.concat(
+        [
+            base_preservada,
+            novos_registros,
+        ],
+        ignore_index=True,
+    )
+
+    if base_final.empty:
+        return pd.DataFrame(
+            columns=[
+                "data",
+                "medico",
+            ]
+        )
+
+    base_final["data_convertida"] = converter_coluna_data(
+        base_final["data"]
+    )
+
+    base_final["medico"] = (
+        base_final["medico"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+    base_final["medico_normalizado"] = (
+        base_final["medico"]
+        .apply(normalizar_texto)
+    )
+
+    registros_validos = base_final.loc[
+        base_final["data_convertida"].notna()
+        & base_final["medico_normalizado"].ne("")
+    ].copy()
+
+    registros_invalidos = base_final.loc[
+        base_final["data_convertida"].isna()
+        | base_final["medico_normalizado"].eq("")
+    ].copy()
+
+    registros_validos = (
+        registros_validos
+        .drop_duplicates(
+            subset=[
+                "data_convertida",
+                "medico_normalizado",
+            ],
+            keep="last",
+        )
+        .sort_values(
+            [
+                "data_convertida",
+                "medico_normalizado",
+            ]
+        )
+        .reset_index(drop=True)
+    )
+
+    registros_validos["data"] = (
+        registros_validos["data_convertida"]
+        .dt.strftime("%d/%m/%Y")
+    )
+
+    base_final = pd.concat(
+        [
+            registros_validos[
+                [
+                    "data",
+                    "medico",
+                ]
+            ],
+            registros_invalidos[
+                [
+                    "data",
+                    "medico",
+                ]
+            ],
+        ],
+        ignore_index=True,
+    )
+
+    base_final = base_final.where(
+        pd.notna(base_final),
+        "",
+    )
+
+    return base_final[
+        [
+            "data",
+            "medico",
+        ]
+    ]
+
+
+@st.dialog(
+    "Editar dados",
+    width="large",
+)
+def abrir_dialogo_editar_dados(
+    linhas_editaveis_df: pd.DataFrame,
+    base_isencao_minimo_df: pd.DataFrame,
+) -> None:
+    """
+    Permite marcar, por dia e médico, quando o valor mínimo
+    não deve ser calculado.
+    """
+    st.caption(
+        "Desmarque um dia quando o valor mínimo não deve ser "
+        "pago para aquele médico, mesmo que o cálculo indique "
+        "que seria necessário. Marque novamente para voltar "
+        "ao cálculo automático. Essa marcação vale para todos "
+        "os resumos financeiros do sistema."
+    )
+
+    if linhas_editaveis_df.empty:
+        st.info(
+            "Não há dias com atendimento para editar no "
+            "período e médico selecionados."
+        )
+
+        return
+
+    tabela_dialogo_df = pd.DataFrame(
+        {
+            "Data": (
+                linhas_editaveis_df["data_convertida"]
+                .dt.date
+            ),
+            "Médico": linhas_editaveis_df["nome_medico"],
+            "Valor final médico": (
+                linhas_editaveis_df["valor_final_medico"]
+            ),
+            "Pagar valor mínimo": (
+                linhas_editaveis_df["pagar_valor_minimo"]
+            ),
+        }
+    )
+
+    tabela_editada_df = st.data_editor(
+        tabela_dialogo_df,
+        use_container_width=True,
+        hide_index=True,
+        disabled=[
+            "Data",
+            "Médico",
+            "Valor final médico",
+        ],
+        column_config={
+            "Data": st.column_config.DateColumn(
+                "Data",
+                format="DD/MM/YYYY",
+            ),
+            "Médico": st.column_config.TextColumn(
+                "Médico",
+                width="medium",
+            ),
+            "Valor final médico": (
+                st.column_config.NumberColumn(
+                    "Valor final médico",
+                    format="R$ %.2f",
+                )
+            ),
+            "Pagar valor mínimo": (
+                st.column_config.CheckboxColumn(
+                    "Pagar valor mínimo",
+                    help=(
+                        "Desmarque para não calcular o valor "
+                        "mínimo nesse dia para esse médico."
+                    ),
+                )
+            ),
+        },
+        key="editor_isencao_valor_minimo",
+    )
+
+    salvar_clicado = st.button(
+        "💾 Salvar",
+        type="primary",
+        use_container_width=True,
+    )
+
+    if not salvar_clicado:
+        return
+
+    pares_exibidos = set(
+        zip(
+            linhas_editaveis_df["data_convertida"],
+            linhas_editaveis_df["medico_normalizado"],
+        )
+    )
+
+    marcado_para_isentar = (
+        ~tabela_editada_df["Pagar valor mínimo"]
+        .fillna(True)
+        .astype(bool)
+    )
+
+    pares_marcados = set(
+        zip(
+            linhas_editaveis_df.loc[
+                marcado_para_isentar.to_numpy(),
+                "data_convertida",
+            ],
+            linhas_editaveis_df.loc[
+                marcado_para_isentar.to_numpy(),
+                "medico_normalizado",
+            ],
+        )
+    )
+
+    nomes_por_medico_normalizado = dict(
+        zip(
+            linhas_editaveis_df["medico_normalizado"],
+            linhas_editaveis_df["nome_medico"],
+        )
+    )
+
+    base_final_df = montar_base_isencao_final(
+        base_isencao_minimo_df=base_isencao_minimo_df,
+        pares_exibidos=pares_exibidos,
+        pares_marcados=pares_marcados,
+        nomes_por_medico_normalizado=(
+            nomes_por_medico_normalizado
+        ),
+    )
+
+    try:
+        with st.spinner(
+            "Salvando alterações..."
+        ):
+            set_sheet_data(
+                NOME_ABA_ISENCAO_MINIMO,
+                base_final_df,
+            )
+
+        st.session_state[
+            "mensagem_isencao_minimo_salva"
+        ] = (
+            "As marcações de valor mínimo foram salvas "
+            "com sucesso."
+        )
+
+        st.rerun()
+
+    except Exception as error:
+        st.error(
+            "Não foi possível salvar as marcações "
+            "de valor mínimo."
+        )
+
+        st.exception(error)
+
+
 def exibir_cards(
     total_exames: float,
     total_taxa_aparelho: float,
@@ -308,6 +625,22 @@ def exibir_cards(
 
 
 # ============================================================
+# Mensagem após salvar
+# ============================================================
+
+mensagem_isencao_minimo_salva = st.session_state.pop(
+    "mensagem_isencao_minimo_salva",
+    None,
+)
+
+
+if mensagem_isencao_minimo_salva:
+    st.success(
+        mensagem_isencao_minimo_salva
+    )
+
+
+# ============================================================
 # Cabeçalho
 # ============================================================
 
@@ -357,6 +690,14 @@ try:
             NOME_ABA_MEIO_PERIODO
         ).copy()
 
+        base_isencao_minimo_df = get_or_create_sheet_data(
+            NOME_ABA_ISENCAO_MINIMO,
+            [
+                "data",
+                "medico",
+            ],
+        ).copy()
+
 except Exception as error:
     st.error(
         "Não foi possível carregar os dados das planilhas."
@@ -373,6 +714,18 @@ if (
     and len(base_meio_periodo_df.columns) == 0
 ):
     base_meio_periodo_df = pd.DataFrame(
+        columns=[
+            "data",
+            "medico",
+        ]
+    )
+
+
+if (
+    base_isencao_minimo_df.empty
+    and len(base_isencao_minimo_df.columns) == 0
+):
+    base_isencao_minimo_df = pd.DataFrame(
         columns=[
             "data",
             "medico",
@@ -400,6 +753,12 @@ base_sobreaviso_df.columns = (
 
 base_meio_periodo_df.columns = (
     base_meio_periodo_df.columns
+    .astype(str)
+    .str.strip()
+)
+
+base_isencao_minimo_df.columns = (
+    base_isencao_minimo_df.columns
     .astype(str)
     .str.strip()
 )
@@ -447,6 +806,15 @@ try:
     validar_colunas(
         base_meio_periodo_df,
         NOME_ABA_MEIO_PERIODO,
+        [
+            "data",
+            "medico",
+        ],
+    )
+
+    validar_colunas(
+        base_isencao_minimo_df,
+        NOME_ABA_ISENCAO_MINIMO,
         [
             "data",
             "medico",
@@ -824,6 +1192,52 @@ base_meio_periodo_df = (
 
 
 base_meio_periodo_df["meio_periodo"] = True
+
+
+# ============================================================
+# Tratamento da base de isenção do valor mínimo
+# ============================================================
+
+base_isencao_minimo_df["medico"] = (
+    base_isencao_minimo_df["medico"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+)
+
+base_isencao_minimo_df["medico_normalizado"] = (
+    base_isencao_minimo_df["medico"]
+    .apply(normalizar_texto)
+)
+
+base_isencao_minimo_df["data_convertida"] = (
+    converter_coluna_data(
+        base_isencao_minimo_df["data"]
+    )
+)
+
+
+base_isencao_minimo_df = (
+    base_isencao_minimo_df.loc[
+        base_isencao_minimo_df[
+            "data_convertida"
+        ].notna()
+        & base_isencao_minimo_df[
+            "medico_normalizado"
+        ].ne("")
+    ]
+    .drop_duplicates(
+        subset=[
+            "data_convertida",
+            "medico_normalizado",
+        ],
+        keep="last",
+    )
+    .copy()
+)
+
+
+base_isencao_minimo_df["isento_valor_minimo"] = True
 
 
 # ============================================================
@@ -1461,6 +1875,54 @@ resumo_financeiro_df[
 )
 
 
+# ============================================================
+# Isenção manual do valor mínimo
+# ============================================================
+#
+# Permite marcar, por dia e médico, que o valor mínimo não
+# deve ser calculado, mesmo que o valor do médico fique
+# abaixo do valor mínimo utilizado naquele dia.
+
+resumo_financeiro_df = resumo_financeiro_df.merge(
+    base_isencao_minimo_df[
+        [
+            "data_convertida",
+            "medico_normalizado",
+            "isento_valor_minimo",
+        ]
+    ],
+    how="left",
+    on=[
+        "data_convertida",
+        "medico_normalizado",
+    ],
+)
+
+
+resumo_financeiro_df["isento_valor_minimo"] = (
+    resumo_financeiro_df["isento_valor_minimo"]
+    .fillna(False)
+    .astype(bool)
+)
+
+
+resumo_financeiro_df.loc[
+    resumo_financeiro_df["isento_valor_minimo"],
+    "pagar_valor_minimo",
+] = False
+
+
+resumo_financeiro_df.loc[
+    resumo_financeiro_df["isento_valor_minimo"],
+    "valor_apos_minimo",
+] = (
+    resumo_financeiro_df.loc[
+        resumo_financeiro_df["isento_valor_minimo"],
+        "valor_medico",
+    ]
+)
+
+
 # Depois de aplicar o valor mínimo, acrescenta:
 #
 # 1. sobreaviso;
@@ -1534,6 +1996,57 @@ exibir_cards(
 
 
 # ============================================================
+# Edição do pagamento do valor mínimo
+# ============================================================
+
+with st.container(border=True):
+    st.markdown(
+        "### Editar dados"
+    )
+
+    st.caption(
+        "Marque, por dia e médico, quando o valor mínimo não "
+        "deve ser calculado. Essa marcação vale para todos os "
+        "resumos financeiros do sistema."
+    )
+
+    editar_dados_clicado = st.button(
+        "📝 Editar dados",
+        type="secondary",
+        use_container_width=True,
+    )
+
+
+if editar_dados_clicado:
+    linhas_editaveis_df = (
+        resumo_financeiro_df.loc[
+            resumo_financeiro_df[
+                "quantidade_atendimentos"
+            ] > 0,
+            [
+                "data_convertida",
+                "medico_normalizado",
+                "nome_medico",
+                "valor_final_medico",
+                "pagar_valor_minimo",
+            ],
+        ]
+        .sort_values(
+            [
+                "data_convertida",
+                "nome_medico",
+            ]
+        )
+        .reset_index(drop=True)
+    )
+
+    abrir_dialogo_editar_dados(
+        linhas_editaveis_df=linhas_editaveis_df,
+        base_isencao_minimo_df=base_isencao_minimo_df,
+    )
+
+
+# ============================================================
 # Tabela para exibição
 # ============================================================
 
@@ -1547,6 +2060,7 @@ tabela_exibicao_df = resumo_financeiro_df[
         "meio_periodo",
         "valor_minimo_utilizado",
         "pagar_valor_minimo",
+        "isento_valor_minimo",
         "valor_auxilio",
         "valor_sobreaviso",
         "valor_final_medico",
@@ -1567,6 +2081,9 @@ tabela_exibicao_df = tabela_exibicao_df.rename(
         ),
         "pagar_valor_minimo": (
             "Pagar valor mínimo"
+        ),
+        "isento_valor_minimo": (
+            "Isenção manual"
         ),
         "valor_auxilio": "Valor auxílio",
         "valor_sobreaviso": (
@@ -1660,7 +2177,19 @@ st.dataframe(
                     "Marcado quando o valor diário calculado "
                     "para o médico é menor que o valor mínimo "
                     "utilizado naquele dia. O auxílio não entra "
-                    "nesse cálculo."
+                    "nesse cálculo. Dias com isenção manual "
+                    "aparecem desmarcados."
+                ),
+            )
+        ),
+        "Isenção manual": (
+            st.column_config.CheckboxColumn(
+                "Isenção manual",
+                help=(
+                    "Marcado quando alguém usou o botão "
+                    "'Editar dados' para dizer que o valor "
+                    "mínimo não deve ser calculado nesse dia "
+                    "para esse médico."
                 ),
             )
         ),

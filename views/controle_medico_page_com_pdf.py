@@ -23,13 +23,17 @@ from reportlab.platypus import (
     PageBreak,
 )
 
-from auxiliar.google_sheets import get_sheet_data
+from auxiliar.google_sheets import (
+    get_or_create_sheet_data,
+    get_sheet_data,
+)
 
 
 NOME_ABA_BASE_DADOS = "base_dados"
 NOME_ABA_MEDICOS = "lista_medicos"
 NOME_ABA_SOBREAVISO = "base_sobreaviso"
 NOME_ABA_MEIO_PERIODO = "base_meio_periodo"
+NOME_ABA_ISENCAO_MINIMO = "base_isencao_valor_minimo"
 
 TODOS_OS_MEDICOS = "Todos os médicos"
 
@@ -695,6 +699,7 @@ def calcular_dados_medico(
     lista_medicos_df: pd.DataFrame,
     base_sobreaviso_df: pd.DataFrame,
     base_meio_periodo_df: pd.DataFrame,
+    base_isencao_minimo_df: pd.DataFrame,
 ) -> dict:
     """
     Calcula todos os dados de um médico no período.
@@ -785,6 +790,25 @@ def calcular_dados_medico(
 
     datas_meio_periodo = set(
         meio_periodo_filtrado_df[
+            "data_convertida"
+        ].tolist()
+    )
+
+    isencao_minimo_filtrado_df = base_isencao_minimo_df.loc[
+        base_isencao_minimo_df["data_convertida"].between(
+            data_inicial_timestamp,
+            data_final_timestamp,
+            inclusive="both",
+        )
+        & base_isencao_minimo_df[
+            "medico_normalizado"
+        ].eq(
+            medico_selecionado_normalizado
+        )
+    ].copy()
+
+    datas_isentas_valor_minimo = set(
+        isencao_minimo_filtrado_df[
             "data_convertida"
         ].tolist()
     )
@@ -899,6 +923,44 @@ def calcular_dados_medico(
                 "valor_minimo_utilizado",
             ]
         ].max(axis=1)
+
+        resumo_diario_df[
+            "complemento_minimo"
+        ] = (
+            resumo_diario_df[
+                "valor_apos_minimo"
+            ]
+            - resumo_diario_df[
+                "valor_medico"
+            ]
+        ).clip(
+            lower=0
+        )
+
+        # Isenção manual: dias marcados na página de controle
+        # financeiro em que o valor mínimo não deve ser
+        # calculado, mesmo que o valor do médico fique abaixo
+        # do mínimo.
+        resumo_diario_df["isento_valor_minimo"] = (
+            resumo_diario_df["data_convertida"].isin(
+                datas_isentas_valor_minimo
+            )
+        )
+
+        resumo_diario_df.loc[
+            resumo_diario_df["isento_valor_minimo"],
+            "pagar_valor_minimo",
+        ] = False
+
+        resumo_diario_df.loc[
+            resumo_diario_df["isento_valor_minimo"],
+            "valor_apos_minimo",
+        ] = (
+            resumo_diario_df.loc[
+                resumo_diario_df["isento_valor_minimo"],
+                "valor_medico",
+            ]
+        )
 
         resumo_diario_df[
             "complemento_minimo"
@@ -1572,6 +1634,14 @@ try:
             NOME_ABA_MEIO_PERIODO
         ).copy()
 
+        base_isencao_minimo_df = get_or_create_sheet_data(
+            NOME_ABA_ISENCAO_MINIMO,
+            [
+                "data",
+                "medico",
+            ],
+        ).copy()
+
 except Exception as error:
     st.error(
         "Não foi possível carregar os dados das planilhas."
@@ -1587,6 +1657,18 @@ if (
     and len(base_meio_periodo_df.columns) == 0
 ):
     base_meio_periodo_df = pd.DataFrame(
+        columns=[
+            "data",
+            "medico",
+        ]
+    )
+
+
+if (
+    base_isencao_minimo_df.empty
+    and len(base_isencao_minimo_df.columns) == 0
+):
+    base_isencao_minimo_df = pd.DataFrame(
         columns=[
             "data",
             "medico",
@@ -1615,6 +1697,12 @@ base_sobreaviso_df.columns = (
 
 base_meio_periodo_df.columns = (
     base_meio_periodo_df.columns
+    .astype(str)
+    .str.strip()
+)
+
+base_isencao_minimo_df.columns = (
+    base_isencao_minimo_df.columns
     .astype(str)
     .str.strip()
 )
@@ -1665,6 +1753,15 @@ try:
     validar_colunas(
         base_meio_periodo_df,
         NOME_ABA_MEIO_PERIODO,
+        [
+            "data",
+            "medico",
+        ],
+    )
+
+    validar_colunas(
+        base_isencao_minimo_df,
+        NOME_ABA_ISENCAO_MINIMO,
         [
             "data",
             "medico",
@@ -2035,6 +2132,49 @@ base_meio_periodo_df = (
 
 
 # ============================================================
+# Tratamento da base de isenção do valor mínimo
+# ============================================================
+
+base_isencao_minimo_df["medico"] = (
+    base_isencao_minimo_df["medico"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+)
+
+base_isencao_minimo_df["medico_normalizado"] = (
+    base_isencao_minimo_df["medico"]
+    .apply(normalizar_texto)
+)
+
+base_isencao_minimo_df["data_convertida"] = (
+    converter_coluna_data(
+        base_isencao_minimo_df["data"]
+    )
+)
+
+
+base_isencao_minimo_df = (
+    base_isencao_minimo_df.loc[
+        base_isencao_minimo_df[
+            "data_convertida"
+        ].notna()
+        & base_isencao_minimo_df[
+            "medico_normalizado"
+        ].ne("")
+    ]
+    .drop_duplicates(
+        subset=[
+            "data_convertida",
+            "medico_normalizado",
+        ],
+        keep="last",
+    )
+    .copy()
+)
+
+
+# ============================================================
 # Período padrão: mês atual
 # ============================================================
 
@@ -2146,6 +2286,7 @@ if medico_selecionado == TODOS_OS_MEDICOS:
             lista_medicos_df=lista_medicos_df,
             base_sobreaviso_df=base_sobreaviso_df,
             base_meio_periodo_df=base_meio_periodo_df,
+            base_isencao_minimo_df=base_isencao_minimo_df,
         )
 
         if medico_tem_movimento(
@@ -2212,6 +2353,7 @@ dados_medico = calcular_dados_medico(
     lista_medicos_df=lista_medicos_df,
     base_sobreaviso_df=base_sobreaviso_df,
     base_meio_periodo_df=base_meio_periodo_df,
+    base_isencao_minimo_df=base_isencao_minimo_df,
 )
 
 

@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from auxiliar.google_sheets import (
+    get_or_create_sheet_data,
     get_sheet_data,
     set_sheet_data,
 )
@@ -50,6 +51,19 @@ BASES_DISPONIVEIS = {
         "descricao": (
             "Configuração de taxas e outros valores do sistema."
         ),
+    },
+    "Isenção do valor mínimo": {
+        "aba": "base_isencao_valor_minimo",
+        "descricao": (
+            "Dias em que o valor mínimo não deve ser calculado "
+            "para o médico, mesmo que o cálculo indique que "
+            "seria necessário. Editável também pelo botão "
+            "'Editar dados' na página de Controle financeiro."
+        ),
+        "colunas_padrao": [
+            "data",
+            "medico",
+        ],
     },
 }
 
@@ -590,6 +604,9 @@ configuracao_base = BASES_DISPONIVEIS[
 
 nome_aba = configuracao_base["aba"]
 descricao_base = configuracao_base["descricao"]
+colunas_padrao = configuracao_base.get(
+    "colunas_padrao"
+)
 
 st.info(descricao_base)
 
@@ -602,9 +619,16 @@ try:
     with st.spinner(
         "Carregando dados da planilha..."
     ):
-        dataframe_original = get_sheet_data(
-            nome_aba
-        ).copy()
+        if colunas_padrao:
+            dataframe_original = get_or_create_sheet_data(
+                nome_aba,
+                colunas_padrao,
+            ).copy()
+
+        else:
+            dataframe_original = get_sheet_data(
+                nome_aba
+            ).copy()
 
 except Exception as error:
     st.error(

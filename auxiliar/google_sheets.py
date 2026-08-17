@@ -178,6 +178,38 @@ def get_sheet_data(
     )
 
 
+def get_or_create_sheet_data(
+    sheet_name: str,
+    columns: list[str],
+    sheet_id: str | None = None,
+) -> pd.DataFrame:
+    """
+    Read a worksheet, creating it with the given header row
+    when it does not exist yet.
+
+    This allows new features to introduce their own tabs
+    without requiring manual setup on the spreadsheet.
+    """
+    try:
+        return get_sheet_data(sheet_name, sheet_id)
+
+    except gspread.exceptions.WorksheetNotFound:
+        spreadsheet = get_spreadsheet(sheet_id)
+
+        worksheet = spreadsheet.add_worksheet(
+            title=sheet_name,
+            rows=100,
+            cols=max(len(columns), 1),
+        )
+
+        worksheet.append_row(columns)
+
+        # Prevent the app from showing previously cached data.
+        get_sheet_data.clear()
+
+        return pd.DataFrame(columns=columns)
+
+
 def set_sheet_data(
     sheet_name: str,
     dataframe: pd.DataFrame,
