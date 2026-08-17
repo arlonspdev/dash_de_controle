@@ -382,7 +382,7 @@ def montar_base_isencao_final(
 
 
 @st.dialog(
-    "Editar dados",
+    "Editar pagamento de valor mínimo",
     width="large",
 )
 def abrir_dialogo_editar_dados(
@@ -2134,9 +2134,9 @@ st.dataframe(
                 "Isenção manual",
                 help=(
                     "Marcado quando alguém usou o botão "
-                    "'Editar dados' para dizer que o valor "
-                    "mínimo não deve ser calculado nesse dia "
-                    "para esse médico."
+                    "'Editar pagamento de valor mínimo' para "
+                    "dizer que o valor mínimo não deve ser "
+                    "calculado nesse dia para esse médico."
                 ),
             )
         ),
@@ -2176,7 +2176,7 @@ st.dataframe(
 
 
 editar_dados_clicado = st.button(
-    "📝 Editar dados",
+    "📝 Editar pagamento de valor mínimo",
     type="secondary",
     use_container_width=True,
 )
