@@ -1292,18 +1292,6 @@ def gerar_pdf_medico(
                 "Valor": dados_medico["total_atendimentos"],
             },
             {
-                "Indicador": "Valor dos exames",
-                "Valor": formatar_moeda(
-                    dados_medico["total_valor_exame"]
-                ),
-            },
-            {
-                "Indicador": "Taxa do aparelho",
-                "Valor": formatar_moeda(
-                    dados_medico["total_taxa_aparelho"]
-                ),
-            },
-            {
                 "Indicador": "Valor médico antes do mínimo",
                 "Valor": formatar_moeda(
                     dados_medico["total_valor_medico"]
