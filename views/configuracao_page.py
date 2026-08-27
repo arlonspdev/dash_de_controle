@@ -126,6 +126,29 @@ def formatar_moeda(valor: float) -> str:
     return f"R$ {valor_formatado}"
 
 
+def limpar_formatacao_moeda_pix(valor) -> str:
+    """
+    Remove formatação de moeda que o Google Sheets aplica
+    automaticamente a chaves PIX puramente numéricas.
+
+    O PIX deve ser tratado sempre como texto simples.
+    """
+    texto = str(valor or "").strip()
+
+    if not texto or not texto.upper().startswith("R$"):
+        return texto
+
+    texto = texto[2:].strip()
+    texto = texto.replace(".", "")
+
+    if texto.endswith(",00"):
+        texto = texto[:-3]
+    else:
+        texto = texto.replace(",", ".")
+
+    return texto
+
+
 def converter_para_float(valor) -> float:
     """
     Converte valores numéricos e monetários para float.
@@ -670,6 +693,13 @@ if dataframe_original.empty:
     )
 
 
+if nome_aba == "lista_medicos" and "pix" in dataframe_original.columns:
+    dataframe_original["pix"] = (
+        dataframe_original["pix"]
+        .apply(limpar_formatacao_moeda_pix)
+    )
+
+
 # ============================================================
 # Tabela editável
 # ============================================================
@@ -811,6 +841,11 @@ if salvar_alteracoes:
                 set_sheet_data(
                     nome_aba,
                     dataframe_para_salvar,
+                    colunas_texto_forcado=(
+                        ["pix"]
+                        if nome_aba == "lista_medicos"
+                        else None
+                    ),
                 )
 
             st.session_state[

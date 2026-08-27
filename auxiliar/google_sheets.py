@@ -214,21 +214,51 @@ def set_sheet_data(
     sheet_name: str,
     dataframe: pd.DataFrame,
     sheet_id: str | None = None,
+    colunas_texto_forcado: list[str] | None = None,
 ) -> None:
     """
     Clear a worksheet and replace its content with a DataFrame.
+
+    colunas_texto_forcado lists column names whose values must stay
+    as plain text, even when they look like numbers (e.g. a PIX key
+    made only of digits). Without this, Google Sheets' USER_ENTERED
+    input mode auto-converts numeric-looking text into a number,
+    which can then pick up currency formatting from the column.
     """
     spreadsheet = get_spreadsheet(sheet_id)
     worksheet = spreadsheet.worksheet(sheet_name)
 
     worksheet.clear()
 
+    dataframe_para_salvar = dataframe
+
+    if colunas_texto_forcado:
+        dataframe_para_salvar = dataframe.copy()
+
+        for coluna in colunas_texto_forcado:
+            if coluna not in dataframe_para_salvar.columns:
+                continue
+
+            dataframe_para_salvar[coluna] = (
+                dataframe_para_salvar[coluna]
+                .apply(
+                    lambda valor: (
+                        f"'{valor}"
+                        if str(valor if valor is not None else "").strip()
+                        else valor
+                    )
+                )
+            )
+
     set_with_dataframe(
         worksheet,
-        dataframe,
+        dataframe_para_salvar,
         include_index=False,
         include_column_header=True,
         resize=True,
+        string_escaping=(
+            "off" if colunas_texto_forcado else "default"
+        ),
     )
 
     # Prevent the app from showing previously cached data.

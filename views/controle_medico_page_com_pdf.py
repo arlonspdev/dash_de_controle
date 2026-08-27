@@ -66,6 +66,29 @@ def formatar_moeda(valor: float) -> str:
     return f"R$ {valor_formatado}"
 
 
+def limpar_formatacao_moeda_pix(valor) -> str:
+    """
+    Remove formatação de moeda que o Google Sheets aplica
+    automaticamente a chaves PIX puramente numéricas.
+
+    O PIX deve ser tratado sempre como texto simples.
+    """
+    texto = str(valor or "").strip()
+
+    if not texto or not texto.upper().startswith("R$"):
+        return texto
+
+    texto = texto[2:].strip()
+    texto = texto.replace(".", "")
+
+    if texto.endswith(",00"):
+        texto = texto[:-3]
+    else:
+        texto = texto.replace(",", ".")
+
+    return texto
+
+
 def converter_para_float(valor) -> float:
     """
     Converte valores monetários para float.
@@ -1348,6 +1371,81 @@ def gerar_pdf_medico(
     )
 
     elementos.append(
+        Spacer(
+            1,
+            0.25 * cm,
+        )
+    )
+
+    estilo_total_destaque = ParagraphStyle(
+        "TotalDestaque",
+        fontName="Helvetica-Bold",
+        fontSize=13,
+        leading=16,
+        alignment=TA_CENTER,
+        textColor=colors.white,
+    )
+
+    tabela_total_destaque = Table(
+        [
+            [
+                criar_paragrafo(
+                    "VALOR FINAL DO MÉDICO: "
+                    + formatar_moeda(
+                        dados_medico["total_final_medico"]
+                    ),
+                    estilo_total_destaque,
+                )
+            ]
+        ],
+        colWidths=[
+            13.0 * cm,
+        ],
+        hAlign="LEFT",
+    )
+
+    tabela_total_destaque.setStyle(
+        TableStyle(
+            [
+                (
+                    "BACKGROUND",
+                    (0, 0),
+                    (-1, -1),
+                    colors.HexColor("#404040"),
+                ),
+                (
+                    "ALIGN",
+                    (0, 0),
+                    (-1, -1),
+                    "CENTER",
+                ),
+                (
+                    "VALIGN",
+                    (0, 0),
+                    (-1, -1),
+                    "MIDDLE",
+                ),
+                (
+                    "TOPPADDING",
+                    (0, 0),
+                    (-1, -1),
+                    8,
+                ),
+                (
+                    "BOTTOMPADDING",
+                    (0, 0),
+                    (-1, -1),
+                    8,
+                ),
+            ]
+        )
+    )
+
+    elementos.append(
+        tabela_total_destaque
+    )
+
+    elementos.append(
         Paragraph(
             "Atendimentos",
             estilo_secao,
@@ -1367,32 +1465,35 @@ def gerar_pdf_medico(
         )
 
     else:
+        tabela_atendimentos_pdf_df = (
+            tabela_atendimentos_df.drop(
+                columns=[
+                    "Valor do exame",
+                    "Taxa do aparelho",
+                ]
+            )
+        )
+
         elementos.append(
             criar_tabela_pdf(
                 dados=dataframe_para_dados_pdf(
-                    tabela_atendimentos_df,
+                    tabela_atendimentos_pdf_df,
                     colunas_monetarias=[
-                        "Valor do exame",
-                        "Taxa do aparelho",
                         "Valor médico",
                     ],
                 ),
                 largura_colunas=[
-                    1.7 * cm,
-                    2.4 * cm,
-                    4.2 * cm,
-                    4.4 * cm,
-                    2.4 * cm,
-                    2.4 * cm,
-                    2.4 * cm,
+                    1.9 * cm,
+                    2.6 * cm,
+                    6.5 * cm,
+                    6.7 * cm,
+                    3.2 * cm,
                 ],
                 estilo_texto=estilo_tabela,
                 estilo_numero=estilo_tabela_numero,
                 estilo_cabecalho=estilo_cabecalho,
                 colunas_numericas=[
                     4,
-                    5,
-                    6,
                 ],
             )
         )
@@ -1797,6 +1898,7 @@ lista_medicos_df["pix"] = (
     .fillna("")
     .astype(str)
     .str.strip()
+    .apply(limpar_formatacao_moeda_pix)
 )
 
 
