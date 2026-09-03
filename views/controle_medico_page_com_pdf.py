@@ -2757,20 +2757,42 @@ if medico_selecionado == TODOS_OS_MEDICOS:
                 dados_medico
             )
 
+    nome_excel_controle = (
+        "controle_pagamento_medicos_"
+        f"{data_inicial.strftime('%Y%m%d')}_"
+        f"a_{data_final.strftime('%Y%m%d')}.xlsx"
+    )
+
+    coluna_zip, coluna_excel = st.columns(2)
+
     if not dados_medicos_para_zip:
         st.info(
             "Nenhum médico possui atendimento, auxílio ou "
             "sobreaviso no período selecionado."
         )
 
-        st.download_button(
-            "⬇️ Baixar ZIP com PDFs",
-            data=b"",
-            file_name="resumos_medicos.zip",
-            mime="application/zip",
-            disabled=True,
-            use_container_width=True,
-        )
+        with coluna_zip:
+            st.download_button(
+                "⬇️ Baixar ZIP com PDFs",
+                data=b"",
+                file_name="resumos_medicos.zip",
+                mime="application/zip",
+                disabled=True,
+                use_container_width=True,
+            )
+
+        with coluna_excel:
+            st.download_button(
+                "📊 Baixar somente planilha de controle",
+                data=b"",
+                file_name=nome_excel_controle,
+                mime=(
+                    "application/vnd.openxmlformats-officedocument"
+                    ".spreadsheetml.sheet"
+                ),
+                disabled=True,
+                use_container_width=True,
+            )
 
         st.stop()
 
@@ -2786,14 +2808,33 @@ if medico_selecionado == TODOS_OS_MEDICOS:
         f"a_{data_final.strftime('%Y%m%d')}.zip"
     )
 
-    st.download_button(
-        "⬇️ Baixar ZIP com PDFs",
-        data=zip_bytes,
-        file_name=nome_zip,
-        mime="application/zip",
-        type="primary",
-        use_container_width=True,
+    excel_controle_bytes = gerar_excel_controle_pagamento(
+        lista_dados_medicos=dados_medicos_para_zip,
+        data_inicial=data_inicial,
+        data_final=data_final,
     )
+
+    with coluna_zip:
+        st.download_button(
+            "⬇️ Baixar ZIP com PDFs",
+            data=zip_bytes,
+            file_name=nome_zip,
+            mime="application/zip",
+            type="primary",
+            use_container_width=True,
+        )
+
+    with coluna_excel:
+        st.download_button(
+            "📊 Baixar somente planilha de controle",
+            data=excel_controle_bytes,
+            file_name=nome_excel_controle,
+            mime=(
+                "application/vnd.openxmlformats-officedocument"
+                ".spreadsheetml.sheet"
+            ),
+            use_container_width=True,
+        )
 
     st.caption(
         f"O ZIP contém {len(dados_medicos_para_zip)} PDF(s) "
