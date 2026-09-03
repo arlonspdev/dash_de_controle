@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date
+from datetime import date, datetime
 from html import escape
 from io import BytesIO
 import re
@@ -8,6 +8,12 @@ import zipfile
 
 import pandas as pd
 import streamlit as st
+
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.formatting.rule import CellIsRule
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
@@ -1634,13 +1640,359 @@ def gerar_pdf_medico(
     return pdf_bytes
 
 
+CAIXA_NAO_MARCADA = "☐"
+CAIXA_MARCADA = "☑"
+
+
+def gerar_excel_controle_pagamento(
+    lista_dados_medicos: list[dict],
+    data_inicial: date,
+    data_final: date,
+) -> bytes:
+    """
+    Gera a planilha de controle de pagamento dos médicos.
+
+    Contém nome do médico, valor final, PIX e uma coluna com
+    caixa de seleção (via lista suspensa) para a secretária
+    marcar quando o pagamento foi realizado.
+    """
+    cor_cabecalho = "404040"
+    cor_titulo = "1F1F1F"
+    cor_linha_alternada = "F7F7F7"
+    cor_borda = "C8C8C8"
+    cor_pago_fundo = "C6EFCE"
+    cor_pago_texto = "006100"
+
+    fonte_titulo = Font(
+        bold=True,
+        size=14,
+        color=cor_titulo,
+    )
+
+    fonte_subtitulo = Font(
+        size=10,
+        color="404040",
+    )
+
+    fonte_cabecalho_tabela = Font(
+        bold=True,
+        size=10,
+        color="FFFFFF",
+    )
+
+    fonte_total = Font(
+        bold=True,
+        size=10,
+    )
+
+    preenchimento_cabecalho = PatternFill(
+        start_color=cor_cabecalho,
+        end_color=cor_cabecalho,
+        fill_type="solid",
+    )
+
+    preenchimento_linha_alternada = PatternFill(
+        start_color=cor_linha_alternada,
+        end_color=cor_linha_alternada,
+        fill_type="solid",
+    )
+
+    preenchimento_pago = PatternFill(
+        start_color=cor_pago_fundo,
+        end_color=cor_pago_fundo,
+        fill_type="solid",
+    )
+
+    borda_fina = Border(
+        left=Side(style="thin", color=cor_borda),
+        right=Side(style="thin", color=cor_borda),
+        top=Side(style="thin", color=cor_borda),
+        bottom=Side(style="thin", color=cor_borda),
+    )
+
+    livro = Workbook()
+    planilha = livro.active
+    planilha.title = "Controle de pagamento"
+
+    colunas = [
+        "Médico",
+        "Valor final",
+        "PIX",
+        "Pago",
+    ]
+
+    quantidade_colunas = len(colunas)
+
+    # ------------------------------------------------------
+    # Cabeçalho: empresa, período e data de geração.
+    # ------------------------------------------------------
+    planilha.merge_cells(
+        start_row=1,
+        start_column=1,
+        end_row=1,
+        end_column=quantidade_colunas,
+    )
+
+    celula_empresa = planilha.cell(
+        row=1,
+        column=1,
+        value=DADOS_EMPRESA[0],
+    )
+
+    celula_empresa.font = fonte_titulo
+    celula_empresa.alignment = Alignment(horizontal="left")
+
+    planilha.merge_cells(
+        start_row=2,
+        start_column=1,
+        end_row=2,
+        end_column=quantidade_colunas,
+    )
+
+    celula_subtitulo = planilha.cell(
+        row=2,
+        column=1,
+        value="Controle de pagamento - médicos",
+    )
+
+    celula_subtitulo.font = Font(
+        bold=True,
+        size=11,
+        color="404040",
+    )
+
+    planilha.merge_cells(
+        start_row=3,
+        start_column=1,
+        end_row=3,
+        end_column=quantidade_colunas,
+    )
+
+    celula_periodo = planilha.cell(
+        row=3,
+        column=1,
+        value=(
+            "Período: "
+            f"{data_inicial.strftime('%d/%m/%Y')} a "
+            f"{data_final.strftime('%d/%m/%Y')}"
+        ),
+    )
+
+    celula_periodo.font = fonte_subtitulo
+
+    planilha.merge_cells(
+        start_row=4,
+        start_column=1,
+        end_row=4,
+        end_column=quantidade_colunas,
+    )
+
+    celula_gerado_em = planilha.cell(
+        row=4,
+        column=1,
+        value=(
+            "Gerado em: "
+            f"{datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        ),
+    )
+
+    celula_gerado_em.font = fonte_subtitulo
+
+    # ------------------------------------------------------
+    # Cabeçalho da tabela.
+    # ------------------------------------------------------
+    linha_cabecalho_tabela = 6
+
+    for indice_coluna, nome_coluna in enumerate(
+        colunas,
+        start=1,
+    ):
+        celula = planilha.cell(
+            row=linha_cabecalho_tabela,
+            column=indice_coluna,
+            value=nome_coluna,
+        )
+
+        celula.font = fonte_cabecalho_tabela
+        celula.fill = preenchimento_cabecalho
+        celula.alignment = Alignment(
+            horizontal="center",
+            vertical="center",
+        )
+        celula.border = borda_fina
+
+    # ------------------------------------------------------
+    # Linhas de dados.
+    # ------------------------------------------------------
+    primeira_linha_dados = linha_cabecalho_tabela + 1
+
+    for indice_medico, dados_medico in enumerate(
+        lista_dados_medicos
+    ):
+        linha_atual = primeira_linha_dados + indice_medico
+        linha_par = indice_medico % 2 == 1
+
+        valores_linha = [
+            dados_medico["medico"],
+            dados_medico["total_final_medico"],
+            dados_medico["pix"] or "Não informado",
+            CAIXA_NAO_MARCADA,
+        ]
+
+        for indice_coluna, valor in enumerate(
+            valores_linha,
+            start=1,
+        ):
+            celula = planilha.cell(
+                row=linha_atual,
+                column=indice_coluna,
+                value=valor,
+            )
+
+            celula.border = borda_fina
+
+            if linha_par:
+                celula.fill = preenchimento_linha_alternada
+
+            if indice_coluna == 2:
+                celula.number_format = '"R$" #,##0.00'
+                celula.alignment = Alignment(
+                    horizontal="right"
+                )
+
+            elif indice_coluna == 4:
+                celula.alignment = Alignment(
+                    horizontal="center"
+                )
+
+            else:
+                celula.alignment = Alignment(
+                    horizontal="left"
+                )
+
+    ultima_linha_dados = (
+        primeira_linha_dados
+        + len(lista_dados_medicos)
+        - 1
+    )
+
+    # ------------------------------------------------------
+    # Caixa de seleção (lista suspensa) na coluna Pago.
+    # ------------------------------------------------------
+    if lista_dados_medicos:
+        validacao_pago = DataValidation(
+            type="list",
+            formula1=f'"{CAIXA_NAO_MARCADA},{CAIXA_MARCADA}"',
+            allow_blank=True,
+        )
+
+        planilha.add_data_validation(
+            validacao_pago
+        )
+
+        intervalo_pago = (
+            f"D{primeira_linha_dados}:"
+            f"D{ultima_linha_dados}"
+        )
+
+        validacao_pago.add(
+            intervalo_pago
+        )
+
+        planilha.conditional_formatting.add(
+            intervalo_pago,
+            CellIsRule(
+                operator="equal",
+                formula=[f'"{CAIXA_MARCADA}"'],
+                fill=preenchimento_pago,
+                font=Font(
+                    bold=True,
+                    color=cor_pago_texto,
+                ),
+            ),
+        )
+
+    # ------------------------------------------------------
+    # Linha de total.
+    # ------------------------------------------------------
+    linha_total = ultima_linha_dados + 1 if lista_dados_medicos else primeira_linha_dados
+
+    celula_total_rotulo = planilha.cell(
+        row=linha_total,
+        column=1,
+        value="TOTAL",
+    )
+
+    celula_total_rotulo.font = fonte_total
+    celula_total_rotulo.alignment = Alignment(
+        horizontal="right"
+    )
+    celula_total_rotulo.border = borda_fina
+
+    celula_total_valor = planilha.cell(
+        row=linha_total,
+        column=2,
+        value=sum(
+            dados_medico["total_final_medico"]
+            for dados_medico in lista_dados_medicos
+        ),
+    )
+
+    celula_total_valor.font = fonte_total
+    celula_total_valor.number_format = '"R$" #,##0.00'
+    celula_total_valor.alignment = Alignment(
+        horizontal="right"
+    )
+    celula_total_valor.border = borda_fina
+
+    for indice_coluna in (3, 4):
+        celula = planilha.cell(
+            row=linha_total,
+            column=indice_coluna,
+        )
+
+        celula.border = borda_fina
+
+    # ------------------------------------------------------
+    # Ajustes finais: largura das colunas e congelamento.
+    # ------------------------------------------------------
+    larguras_colunas = [34, 16, 26, 12]
+
+    for indice_coluna, largura in enumerate(
+        larguras_colunas,
+        start=1,
+    ):
+        planilha.column_dimensions[
+            get_column_letter(indice_coluna)
+        ].width = largura
+
+    planilha.freeze_panes = (
+        f"A{primeira_linha_dados}"
+    )
+
+    planilha.sheet_view.showGridLines = False
+
+    buffer_excel = BytesIO()
+
+    livro.save(
+        buffer_excel
+    )
+
+    excel_bytes = buffer_excel.getvalue()
+
+    buffer_excel.close()
+
+    return excel_bytes
+
+
 def gerar_zip_pdfs(
     lista_dados_medicos: list[dict],
     data_inicial: date,
     data_final: date,
 ) -> bytes:
     """
-    Gera um ZIP com um PDF por médico.
+    Gera um ZIP com um PDF por médico e a planilha de
+    controle de pagamento.
     """
     buffer_zip = BytesIO()
 
@@ -1667,6 +2019,23 @@ def gerar_zip_pdfs(
                 nome_arquivo,
                 pdf_bytes,
             )
+
+        excel_bytes = gerar_excel_controle_pagamento(
+            lista_dados_medicos=lista_dados_medicos,
+            data_inicial=data_inicial,
+            data_final=data_final,
+        )
+
+        nome_excel = (
+            "controle_pagamento_medicos_"
+            f"{data_inicial.strftime('%Y%m%d')}_"
+            f"a_{data_final.strftime('%Y%m%d')}.xlsx"
+        )
+
+        arquivo_zip.writestr(
+            nome_excel,
+            excel_bytes,
+        )
 
     zip_bytes = buffer_zip.getvalue()
 
@@ -2362,7 +2731,9 @@ if medico_selecionado == TODOS_OS_MEDICOS:
         "Quando a opção Todos os médicos está selecionada, "
         "a página não mostra o resumo na tela. O botão abaixo "
         "gera um arquivo ZIP com um PDF por médico que possui "
-        "atendimento, auxílio ou sobreaviso no período."
+        "atendimento, auxílio ou sobreaviso no período, além de "
+        "uma planilha Excel de controle de pagamento com todos "
+        "os médicos."
     )
 
     dados_medicos_para_zip = []
@@ -2425,7 +2796,8 @@ if medico_selecionado == TODOS_OS_MEDICOS:
     )
 
     st.caption(
-        f"O ZIP contém {len(dados_medicos_para_zip)} PDF(s)."
+        f"O ZIP contém {len(dados_medicos_para_zip)} PDF(s) "
+        "e a planilha de controle de pagamento."
     )
 
     st.stop()

@@ -149,7 +149,7 @@ def get_spreadsheet(
 
 
 @st.cache_data(
-    ttl=300,
+    ttl=1800,
     show_spinner=False,
 )
 def get_sheet_data(

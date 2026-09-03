@@ -4,7 +4,7 @@ import streamlit as st
 
 
 NOME_APP = "ARLONSP - SERVIÇOS MÉDICOS"
-DATA_ULTIMA_ATUALIZACAO = date(2026, 8, 27)
+DATA_ULTIMA_ATUALIZACAO = date(2026, 9, 3)
 
 
 def formatar_data_brasileira(data: date) -> str:

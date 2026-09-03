@@ -6,3 +6,4 @@ gspread-dataframe
 google-auth
 python-dotenv
 reportlab
+openpyxl
