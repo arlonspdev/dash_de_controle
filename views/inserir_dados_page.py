@@ -283,20 +283,72 @@ def remover_bloco_exame() -> None:
     )
 
     if quantidade_atual > 1:
+        indice_removido = quantidade_atual - 1
+
+        st.session_state.pop(
+            f"nome_exame_{indice_removido}",
+            None,
+        )
+
+        st.session_state.pop(
+            f"procedimentos_{indice_removido}",
+            None,
+        )
+
         st.session_state[
             "quantidade_blocos_exames"
-        ] = quantidade_atual - 1
+        ] = indice_removido
+
+
+def limpar_formulario_atendimento() -> None:
+    """
+    Remove do session_state os valores dos campos do
+    formulário, para que os widgets voltem ao estado inicial
+    na próxima execução.
+
+    Isso é feito em vez de trocar a "key" dos widgets a cada
+    novo atendimento: trocar a key recria os elementos no
+    navegador com um identificador diferente, o que faz o
+    Streamlit perder o foco do campo logo após salvar. Usando
+    sempre as mesmas keys e apenas limpando o valor, o foco é
+    preservado.
+    """
+    quantidade_atual = st.session_state.get(
+        "quantidade_blocos_exames",
+        1,
+    )
+
+    campos_fixos = [
+        "numero_atendimento",
+        "nome_paciente",
+        "nome_medico",
+        "convenio",
+        "medico_auxiliar",
+        "valor_auxilio",
+        "data_atendimento",
+    ]
+
+    for campo in campos_fixos:
+        st.session_state.pop(
+            campo,
+            None,
+        )
+
+    for indice in range(quantidade_atual):
+        st.session_state.pop(
+            f"nome_exame_{indice}",
+            None,
+        )
+
+        st.session_state.pop(
+            f"procedimentos_{indice}",
+            None,
+        )
 
 
 # ============================================================
 # Estado da página
 # ============================================================
-
-if "versao_formulario_atendimento" not in st.session_state:
-    st.session_state[
-        "versao_formulario_atendimento"
-    ] = 0
-
 
 if "quantidade_blocos_exames" not in st.session_state:
     st.session_state[
@@ -321,10 +373,6 @@ if mensagem_sucesso:
         mensagem_sucesso
     )
 
-
-versao_formulario = st.session_state[
-    "versao_formulario_atendimento"
-]
 
 quantidade_blocos_exames = st.session_state[
     "quantidade_blocos_exames"
@@ -591,10 +639,7 @@ with st.container(border=True):
                 "ultima_data_atendimento"
             ],
             format="DD/MM/YYYY",
-            key=(
-                f"data_atendimento_"
-                f"{versao_formulario}"
-            ),
+            key="data_atendimento",
         )
 
     with coluna_atendimento:
@@ -603,10 +648,7 @@ with st.container(border=True):
             placeholder=(
                 "Digite o número do atendimento"
             ),
-            key=(
-                f"numero_atendimento_"
-                f"{versao_formulario}"
-            ),
+            key="numero_atendimento",
         )
 
     nome_paciente = st.text_input(
@@ -614,10 +656,7 @@ with st.container(border=True):
         placeholder=(
             "Digite o nome completo do paciente"
         ),
-        key=(
-            f"nome_paciente_"
-            f"{versao_formulario}"
-        ),
+        key="nome_paciente",
     )
 
     coluna_medico, coluna_convenio = st.columns(2)
@@ -628,10 +667,7 @@ with st.container(border=True):
             options=nomes_medicos,
             index=None,
             placeholder="Selecione um médico",
-            key=(
-                f"nome_medico_"
-                f"{versao_formulario}"
-            ),
+            key="nome_medico",
         )
 
     with coluna_convenio:
@@ -642,10 +678,7 @@ with st.container(border=True):
             placeholder=(
                 "Selecione um convênio, se houver"
             ),
-            key=(
-                f"convenio_"
-                f"{versao_formulario}"
-            ),
+            key="convenio",
         )
 
     coluna_medico_auxiliar, coluna_valor_auxilio = (
@@ -660,20 +693,14 @@ with st.container(border=True):
             placeholder=(
                 "Selecione um médico auxiliar, se houver"
             ),
-            key=(
-                f"medico_auxiliar_"
-                f"{versao_formulario}"
-            ),
+            key="medico_auxiliar",
         )
 
     with coluna_valor_auxilio:
         valor_auxilio_texto = st.text_input(
             "Valor do auxílio — opcional",
             placeholder="Ex.: 150,00",
-            key=(
-                f"valor_auxilio_"
-                f"{versao_formulario}"
-            ),
+            key="valor_auxilio",
         )
 
 
@@ -738,11 +765,7 @@ for indice in range(
                 options=nomes_exames,
                 index=None,
                 placeholder="Selecione um exame",
-                key=(
-                    f"nome_exame_"
-                    f"{versao_formulario}_"
-                    f"{indice}"
-                ),
+                key=f"nome_exame_{indice}",
             )
 
         with coluna_procedimentos:
@@ -755,11 +778,7 @@ for indice in range(
                         "Selecione os procedimentos, "
                         "se houver"
                     ),
-                    key=(
-                        f"procedimentos_"
-                        f"{versao_formulario}_"
-                        f"{indice}"
-                    ),
+                    key=f"procedimentos_{indice}",
                 )
             )
 
@@ -1270,9 +1289,7 @@ if salvar_dados:
             "ultima_data_atendimento"
         ] = data_atendimento
 
-        st.session_state[
-            "versao_formulario_atendimento"
-        ] += 1
+        limpar_formulario_atendimento()
 
         st.session_state[
             "quantidade_blocos_exames"
