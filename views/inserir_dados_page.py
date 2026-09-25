@@ -367,9 +367,15 @@ mensagem_sucesso = st.session_state.pop(
     None,
 )
 
+# Usa um placeholder fixo (sempre criado, mesmo sem mensagem) em vez
+# de um "if" direto. Assim a página tem sempre a mesma quantidade de
+# elementos no topo entre uma execução e outra, o que evita que os
+# campos do formulário sejam remontados e percam o foco logo depois
+# de salvar um atendimento.
+placeholder_mensagem_sucesso = st.empty()
 
 if mensagem_sucesso:
-    st.success(
+    placeholder_mensagem_sucesso.success(
         mensagem_sucesso
     )
 
@@ -383,7 +389,7 @@ quantidade_blocos_exames = st.session_state[
 # Cabeçalho
 # ============================================================
 
-with st.container(border=True):
+with st.container(border=True, key="container_cabecalho"):
     coluna_icone, coluna_titulo = st.columns(
         [1, 8],
         vertical_alignment="center",
@@ -625,7 +631,7 @@ if not encontrou_taxa_aparelho:
 # Dados comuns do atendimento
 # ============================================================
 
-with st.container(border=True):
+with st.container(border=True, key="container_dados_atendimento"):
     st.markdown(
         "### Dados do atendimento"
     )
