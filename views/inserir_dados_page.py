@@ -302,48 +302,57 @@ def remover_bloco_exame() -> None:
 
 def limpar_formulario_atendimento() -> None:
     """
-    Remove do session_state os valores dos campos do
-    formulário, para que os widgets voltem ao estado inicial
-    na próxima execução.
+    Volta os campos do formulário para o estado inicial.
 
-    Isso é feito em vez de trocar a "key" dos widgets a cada
-    novo atendimento: trocar a key recria os elementos no
-    navegador com um identificador diferente, o que faz o
-    Streamlit perder o foco do campo logo após salvar. Usando
-    sempre as mesmas keys e apenas limpando o valor, o foco é
-    preservado.
+    Deve ser chamada no início da execução, antes de os widgets
+    serem criados: o Streamlit não permite alterar o valor de um
+    widget depois que ele já foi instanciado na execução atual.
+
+    Os valores são redefinidos explicitamente (em vez de apenas
+    removidos do session_state) porque só assim o Streamlit envia
+    o novo valor para o navegador; removendo a key, o campo
+    continuaria mostrando o texto antigo.
+
+    As keys dos widgets continuam sempre as mesmas. Trocar a key
+    a cada atendimento recriaria os elementos no navegador com um
+    identificador diferente, o que faz o campo perder o foco logo
+    após salvar.
     """
     quantidade_atual = st.session_state.get(
         "quantidade_blocos_exames",
         1,
     )
 
-    campos_fixos = [
+    campos_texto = [
         "numero_atendimento",
         "nome_paciente",
+        "valor_auxilio",
+    ]
+
+    campos_selecao = [
         "nome_medico",
         "convenio",
         "medico_auxiliar",
-        "valor_auxilio",
-        "data_atendimento",
     ]
 
-    for campo in campos_fixos:
-        st.session_state.pop(
-            campo,
-            None,
-        )
+    for campo in campos_texto:
+        st.session_state[campo] = ""
+
+    for campo in campos_selecao:
+        st.session_state[campo] = None
 
     for indice in range(quantidade_atual):
-        st.session_state.pop(
-            f"nome_exame_{indice}",
-            None,
-        )
+        st.session_state[
+            f"nome_exame_{indice}"
+        ] = None
 
-        st.session_state.pop(
-            f"procedimentos_{indice}",
-            None,
-        )
+        st.session_state[
+            f"procedimentos_{indice}"
+        ] = []
+
+    st.session_state[
+        "quantidade_blocos_exames"
+    ] = 1
 
 
 # ============================================================
@@ -354,6 +363,13 @@ if "quantidade_blocos_exames" not in st.session_state:
     st.session_state[
         "quantidade_blocos_exames"
     ] = 1
+
+
+if st.session_state.pop(
+    "limpar_formulario_pendente",
+    False,
+):
+    limpar_formulario_atendimento()
 
 
 if "ultima_data_atendimento" not in st.session_state:
@@ -779,7 +795,6 @@ for indice in range(
                 st.multiselect(
                     "Procedimentos — opcional",
                     options=procedimentos_disponiveis,
-                    default=[],
                     placeholder=(
                         "Selecione os procedimentos, "
                         "se houver"
@@ -1295,11 +1310,11 @@ if salvar_dados:
             "ultima_data_atendimento"
         ] = data_atendimento
 
-        limpar_formulario_atendimento()
-
+        # A limpeza dos campos acontece no início da próxima
+        # execução, antes de os widgets serem criados.
         st.session_state[
-            "quantidade_blocos_exames"
-        ] = 1
+            "limpar_formulario_pendente"
+        ] = True
 
         st.toast(
             "Dados salvos com sucesso!",
