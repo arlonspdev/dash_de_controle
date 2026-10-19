@@ -170,6 +170,12 @@ pag_inserir_sobreaviso = st.Page(
     icon="📟",
 )
 
+pag_inserir_presenca = st.Page(
+    "views/inserir_presenca_page.py",
+    title="Registrar Presença sem Exame",
+    icon="🙋",
+)
+
 pag_meio_periodo = st.Page(
     "views/meio_periodo_page.py",
     title="Definir Meio de Período",
@@ -213,6 +219,7 @@ paginas = {
     "Inserir Dados": [
         pag_inserir_dados,
         pag_inserir_sobreaviso,
+        pag_inserir_presenca,
         pag_meio_periodo,
     ],
     "Controle Financeiro": [

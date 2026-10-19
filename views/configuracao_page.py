@@ -65,6 +65,18 @@ BASES_DISPONIVEIS = {
             "medico",
         ],
     },
+    "Presença sem exame": {
+        "aba": "base_presenca",
+        "descricao": (
+            "Dias em que o médico veio, mas não realizou exames. "
+            "Nesses dias o médico recebe o valor mínimo (metade, "
+            "se o dia estiver marcado como meio período)."
+        ),
+        "colunas_padrao": [
+            "data",
+            "medico",
+        ],
+    },
 }
 
 

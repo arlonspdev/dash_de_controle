@@ -18,6 +18,7 @@ NOME_ABA_MEDICOS = "lista_medicos"
 NOME_ABA_SOBREAVISO = "base_sobreaviso"
 NOME_ABA_MEIO_PERIODO = "base_meio_periodo"
 NOME_ABA_ISENCAO_MINIMO = "base_isencao_valor_minimo"
+NOME_ABA_PRESENCA = "base_presenca"
 
 TODOS_OS_MEDICOS = "Todos os médicos"
 
@@ -696,6 +697,14 @@ try:
             ],
         ).copy()
 
+        base_presenca_df = get_or_create_sheet_data(
+            NOME_ABA_PRESENCA,
+            [
+                "data",
+                "medico",
+            ],
+        ).copy()
+
 except Exception as error:
     st.error(
         "Não foi possível carregar os dados das planilhas."
@@ -731,6 +740,18 @@ if (
     )
 
 
+if (
+    base_presenca_df.empty
+    and len(base_presenca_df.columns) == 0
+):
+    base_presenca_df = pd.DataFrame(
+        columns=[
+            "data",
+            "medico",
+        ]
+    )
+
+
 base_dados_df.columns = (
     base_dados_df.columns
     .astype(str)
@@ -757,6 +778,12 @@ base_meio_periodo_df.columns = (
 
 base_isencao_minimo_df.columns = (
     base_isencao_minimo_df.columns
+    .astype(str)
+    .str.strip()
+)
+
+base_presenca_df.columns = (
+    base_presenca_df.columns
     .astype(str)
     .str.strip()
 )
@@ -813,6 +840,15 @@ try:
     validar_colunas(
         base_isencao_minimo_df,
         NOME_ABA_ISENCAO_MINIMO,
+        [
+            "data",
+            "medico",
+        ],
+    )
+
+    validar_colunas(
+        base_presenca_df,
+        NOME_ABA_PRESENCA,
         [
             "data",
             "medico",
@@ -1239,6 +1275,67 @@ base_isencao_minimo_df["isento_valor_minimo"] = True
 
 
 # ============================================================
+# Tratamento da base de presença sem exame
+# ============================================================
+#
+# Dias em que o médico compareceu, mas não realizou exames.
+# Nesses dias o valor mínimo também deve ser pago.
+
+base_presenca_df["medico"] = (
+    base_presenca_df["medico"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+)
+
+base_presenca_df["medico_normalizado"] = (
+    base_presenca_df["medico"]
+    .apply(normalizar_texto)
+)
+
+base_presenca_df["data_convertida"] = (
+    converter_coluna_data(
+        base_presenca_df["data"]
+    )
+)
+
+
+base_presenca_df = (
+    base_presenca_df.loc[
+        base_presenca_df[
+            "data_convertida"
+        ].notna()
+        & base_presenca_df[
+            "medico_normalizado"
+        ].ne("")
+    ]
+    .drop_duplicates(
+        subset=[
+            "data_convertida",
+            "medico_normalizado",
+        ],
+        keep="last",
+    )
+    .rename(
+        columns={
+            "medico": "nome_medico",
+        }
+    )
+    [
+        [
+            "data_convertida",
+            "medico_normalizado",
+            "nome_medico",
+        ]
+    ]
+    .copy()
+)
+
+
+base_presenca_df["presenca_sem_exame"] = True
+
+
+# ============================================================
 # Período padrão: mês atual
 # ============================================================
 
@@ -1416,6 +1513,15 @@ sobreaviso_filtrado_df = base_sobreaviso_df.loc[
 ].copy()
 
 
+presenca_filtrada_df = base_presenca_df.loc[
+    base_presenca_df["data_convertida"].between(
+        data_inicial_timestamp,
+        data_final_timestamp,
+        inclusive="both",
+    )
+].copy()
+
+
 if medico_selecionado != TODOS_OS_MEDICOS:
     medico_selecionado_normalizado = normalizar_texto(
         medico_selecionado
@@ -1446,6 +1552,17 @@ if medico_selecionado != TODOS_OS_MEDICOS:
     sobreaviso_filtrado_df = (
         sobreaviso_filtrado_df.loc[
             sobreaviso_filtrado_df[
+                "medico_normalizado"
+            ].eq(
+                medico_selecionado_normalizado
+            )
+        ]
+        .copy()
+    )
+
+    presenca_filtrada_df = (
+        presenca_filtrada_df.loc[
+            presenca_filtrada_df[
                 "medico_normalizado"
             ].eq(
                 medico_selecionado_normalizado
@@ -1630,6 +1747,28 @@ resumo_financeiro_df = resumo_financeiro_df.merge(
 )
 
 
+# Quando não há atendimentos, sobreavisos nem auxílios no
+# período, a coluna de data fica sem tipo definido. Converte
+# para data antes de cruzar com a base de presença.
+resumo_financeiro_df["data_convertida"] = pd.to_datetime(
+    resumo_financeiro_df["data_convertida"]
+)
+
+
+resumo_financeiro_df = resumo_financeiro_df.merge(
+    presenca_filtrada_df.rename(
+        columns={
+            "nome_medico": "nome_medico_presenca",
+        }
+    ),
+    how="outer",
+    on=[
+        "data_convertida",
+        "medico_normalizado",
+    ],
+)
+
+
 if resumo_financeiro_df.empty:
     exibir_cards(
         total_exames=0,
@@ -1641,8 +1780,8 @@ if resumo_financeiro_df.empty:
     )
 
     st.info(
-        "Nenhum atendimento, sobreaviso ou auxílio foi encontrado "
-        "para os filtros selecionados."
+        "Nenhum atendimento, sobreaviso, auxílio ou presença "
+        "sem exame foi encontrado para os filtros selecionados."
     )
 
     st.stop()
@@ -1662,6 +1801,11 @@ resumo_financeiro_df["nome_medico"] = (
             "nome_medico"
         ]
     )
+    .fillna(
+        resumo_financeiro_df[
+            "nome_medico_presenca"
+        ]
+    )
 )
 
 
@@ -1670,9 +1814,26 @@ resumo_financeiro_df = (
         columns=[
             "nome_medico_atendimento",
             "nome_medico_sobreaviso",
+            "nome_medico_presenca",
         ]
     )
 )
+
+
+resumo_financeiro_df["presenca_sem_exame"] = (
+    resumo_financeiro_df["presenca_sem_exame"]
+    .fillna(False)
+    .astype(bool)
+)
+
+
+# Se o dia também tiver exames, prevalecem os exames.
+resumo_financeiro_df.loc[
+    resumo_financeiro_df[
+        "quantidade_atendimentos"
+    ].fillna(0) > 0,
+    "presenca_sem_exame",
+] = False
 
 
 colunas_para_preencher = [
@@ -1735,9 +1896,14 @@ medicos_sem_valor_minimo = (
             "valor_minimo"
         ].isna()
         & (
-            resumo_financeiro_df[
-                "quantidade_atendimentos"
-            ] > 0
+            (
+                resumo_financeiro_df[
+                    "quantidade_atendimentos"
+                ] > 0
+            )
+            | resumo_financeiro_df[
+                "presenca_sem_exame"
+            ]
         ),
         "nome_medico",
     ]
@@ -1784,10 +1950,17 @@ resumo_financeiro_df["meio_periodo"] = (
 )
 
 
+# Dias com presença sem exame também recebem o valor
+# mínimo, com valor médico igual a zero.
 tem_atendimento = (
-    resumo_financeiro_df[
-        "quantidade_atendimentos"
-    ] > 0
+    (
+        resumo_financeiro_df[
+            "quantidade_atendimentos"
+        ] > 0
+    )
+    | resumo_financeiro_df[
+        "presenca_sem_exame"
+    ]
 )
 
 
@@ -2004,6 +2177,7 @@ tabela_exibicao_df = resumo_financeiro_df[
         "valor_exame",
         "taxa_aparelho",
         "valor_medico",
+        "presenca_sem_exame",
         "meio_periodo",
         "valor_minimo_utilizado",
         "pagar_valor_minimo",
@@ -2022,6 +2196,7 @@ tabela_exibicao_df = tabela_exibicao_df.rename(
         "valor_exame": "Valor dos exames",
         "taxa_aparelho": "Taxa do aparelho",
         "valor_medico": "Valor médico",
+        "presenca_sem_exame": "Presença sem exame",
         "meio_periodo": "Meio período",
         "valor_minimo_utilizado": (
             "Valor mínimo utilizado"
@@ -2094,6 +2269,17 @@ st.dataframe(
                 help=(
                     "Valor calculado antes da aplicação "
                     "do mínimo. Não inclui auxílio."
+                ),
+            )
+        ),
+        "Presença sem exame": (
+            st.column_config.CheckboxColumn(
+                "Presença sem exame",
+                help=(
+                    "Marcado quando a data e o médico estão "
+                    "cadastrados na aba base_presenca. O médico "
+                    "veio, não realizou exames e recebe o valor "
+                    "mínimo."
                 ),
             )
         ),
@@ -2185,9 +2371,14 @@ editar_dados_clicado = st.button(
 if editar_dados_clicado:
     linhas_editaveis_df = (
         resumo_financeiro_df.loc[
-            resumo_financeiro_df[
-                "quantidade_atendimentos"
-            ] > 0,
+            (
+                resumo_financeiro_df[
+                    "quantidade_atendimentos"
+                ] > 0
+            )
+            | resumo_financeiro_df[
+                "presenca_sem_exame"
+            ],
             [
                 "data_convertida",
                 "medico_normalizado",

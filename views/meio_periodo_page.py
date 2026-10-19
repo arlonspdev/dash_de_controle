@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from auxiliar.google_sheets import (
+    get_or_create_sheet_data,
     get_sheet_data,
     set_sheet_data,
 )
@@ -13,6 +14,7 @@ from auxiliar.google_sheets import (
 
 NOME_ABA_BASE_DADOS = "base_dados"
 NOME_ABA_MEIO_PERIODO = "base_meio_periodo"
+NOME_ABA_PRESENCA = "base_presenca"
 
 
 # ============================================================
@@ -415,6 +417,14 @@ try:
             NOME_ABA_MEIO_PERIODO
         ).copy()
 
+        base_presenca_original_df = get_or_create_sheet_data(
+            NOME_ABA_PRESENCA,
+            [
+                "data",
+                "medico",
+            ],
+        ).copy()
+
 except Exception as error:
     st.error(
         "Não foi possível carregar os dados das planilhas."
@@ -443,6 +453,12 @@ try:
 
     base_meio_periodo_df = preparar_base_meio_periodo(
         base_meio_periodo_original_df
+    )
+
+    # A aba de presença tem a mesma estrutura (data, medico)
+    # da aba de meio período.
+    base_presenca_df = preparar_base_meio_periodo(
+        base_presenca_original_df
     )
 
 except ValueError as error:
@@ -493,6 +509,39 @@ base_dados_valida_df = base_dados_df.loc[
     base_dados_df["data_convertida"].notna()
     & base_dados_df["medico_normalizado"].ne("")
 ].copy()
+
+
+# Dias de presença sem exame também podem ser marcados
+# como meio período.
+base_presenca_valida_df = base_presenca_df.loc[
+    base_presenca_df["data_convertida"].notna()
+    & base_presenca_df["medico_normalizado"].ne("")
+].rename(
+    columns={
+        "medico": "nome_medico",
+    }
+)
+
+
+base_dados_valida_df = pd.concat(
+    [
+        base_dados_valida_df[
+            [
+                "data_convertida",
+                "nome_medico",
+                "medico_normalizado",
+            ]
+        ],
+        base_presenca_valida_df[
+            [
+                "data_convertida",
+                "nome_medico",
+                "medico_normalizado",
+            ]
+        ],
+    ],
+    ignore_index=True,
+)
 
 
 medicos_disponiveis = obter_lista_medicos(
@@ -628,8 +677,8 @@ dias_atendimento_df = (
 
 if dias_atendimento_df.empty:
     st.warning(
-        "Esse médico não possui atendimentos no período "
-        "selecionado."
+        "Esse médico não possui atendimentos nem presença "
+        "sem exame no período selecionado."
     )
 
     st.stop()
@@ -673,7 +722,7 @@ tabela_edicao_df = pd.DataFrame(
 # ============================================================
 
 st.markdown(
-    "### Dias com atendimento"
+    "### Dias com atendimento ou presença sem exame"
 )
 
 st.caption(

@@ -40,6 +40,7 @@ NOME_ABA_MEDICOS = "lista_medicos"
 NOME_ABA_SOBREAVISO = "base_sobreaviso"
 NOME_ABA_MEIO_PERIODO = "base_meio_periodo"
 NOME_ABA_ISENCAO_MINIMO = "base_isencao_valor_minimo"
+NOME_ABA_PRESENCA = "base_presenca"
 
 TODOS_OS_MEDICOS = "Todos os médicos"
 
@@ -729,6 +730,7 @@ def calcular_dados_medico(
     base_sobreaviso_df: pd.DataFrame,
     base_meio_periodo_df: pd.DataFrame,
     base_isencao_minimo_df: pd.DataFrame,
+    base_presenca_df: pd.DataFrame,
 ) -> dict:
     """
     Calcula todos os dados de um médico no período.
@@ -842,6 +844,55 @@ def calcular_dados_medico(
         ].tolist()
     )
 
+    presenca_filtrada_df = base_presenca_df.loc[
+        base_presenca_df["data_convertida"].between(
+            data_inicial_timestamp,
+            data_final_timestamp,
+            inclusive="both",
+        )
+        & base_presenca_df[
+            "medico_normalizado"
+        ].eq(
+            medico_selecionado_normalizado
+        )
+    ].copy()
+
+    # Dias em que o médico veio, mas não realizou exames.
+    # Entram no cálculo diário com valor médico zero, para
+    # que o valor mínimo seja pago. Se o dia também tiver
+    # exames, prevalecem os exames.
+    datas_presenca_sem_exame = set(
+        presenca_filtrada_df[
+            "data_convertida"
+        ].tolist()
+    ) - set(
+        base_filtrada_df[
+            "data_convertida"
+        ].tolist()
+    )
+
+    dias_trabalhados_df = pd.concat(
+        [
+            base_filtrada_df[
+                [
+                    "data_convertida",
+                    "valor_medico",
+                ]
+            ],
+            pd.DataFrame(
+                {
+                    "data_convertida": pd.to_datetime(
+                        sorted(
+                            datas_presenca_sem_exame
+                        )
+                    ),
+                    "valor_medico": 0.0,
+                }
+            ),
+        ],
+        ignore_index=True,
+    )
+
     # Um atendimento pode ocupar várias linhas por causa dos
     # exames e procedimentos. Por isso, a contagem utiliza
     # chave_atendimento, sem duplicidades.
@@ -881,7 +932,7 @@ def calcular_dados_medico(
         .drop_duplicates()
     )
 
-    if base_filtrada_df.empty:
+    if dias_trabalhados_df.empty:
         resumo_diario_df = pd.DataFrame(
             columns=[
                 "data_convertida",
@@ -899,7 +950,7 @@ def calcular_dados_medico(
 
     else:
         resumo_diario_df = (
-            base_filtrada_df
+            dias_trabalhados_df
             .groupby(
                 "data_convertida",
                 as_index=False,
@@ -1067,6 +1118,9 @@ def calcular_dados_medico(
         "total_apos_minimo": total_apos_minimo,
         "total_final_medico": total_final_medico,
         "quantidade_dias_valor_minimo": quantidade_dias_valor_minimo,
+        "quantidade_dias_presenca_sem_exame": len(
+            datas_presenca_sem_exame
+        ),
     }
 
 
@@ -1081,6 +1135,7 @@ def medico_tem_movimento(
             dados_medico["total_atendimentos"] > 0,
             dados_medico["quantidade_auxilios"] > 0,
             dados_medico["total_sobreaviso"] > 0,
+            dados_medico["quantidade_dias_presenca_sem_exame"] > 0,
         ]
     )
 
@@ -1343,6 +1398,12 @@ def gerar_pdf_medico(
                 "Indicador": "Dias com pagamento mínimo",
                 "Valor": dados_medico[
                     "quantidade_dias_valor_minimo"
+                ],
+            },
+            {
+                "Indicador": "Dias de presença sem exame",
+                "Valor": dados_medico[
+                    "quantidade_dias_presenca_sem_exame"
                 ],
             },
         ]
@@ -2100,6 +2161,14 @@ try:
             ],
         ).copy()
 
+        base_presenca_df = get_or_create_sheet_data(
+            NOME_ABA_PRESENCA,
+            [
+                "data",
+                "medico",
+            ],
+        ).copy()
+
 except Exception as error:
     st.error(
         "Não foi possível carregar os dados das planilhas."
@@ -2134,6 +2203,18 @@ if (
     )
 
 
+if (
+    base_presenca_df.empty
+    and len(base_presenca_df.columns) == 0
+):
+    base_presenca_df = pd.DataFrame(
+        columns=[
+            "data",
+            "medico",
+        ]
+    )
+
+
 # Remove espaços acidentais nos nomes das colunas.
 base_dados_df.columns = (
     base_dados_df.columns
@@ -2161,6 +2242,12 @@ base_meio_periodo_df.columns = (
 
 base_isencao_minimo_df.columns = (
     base_isencao_minimo_df.columns
+    .astype(str)
+    .str.strip()
+)
+
+base_presenca_df.columns = (
+    base_presenca_df.columns
     .astype(str)
     .str.strip()
 )
@@ -2220,6 +2307,15 @@ try:
     validar_colunas(
         base_isencao_minimo_df,
         NOME_ABA_ISENCAO_MINIMO,
+        [
+            "data",
+            "medico",
+        ],
+    )
+
+    validar_colunas(
+        base_presenca_df,
+        NOME_ABA_PRESENCA,
         [
             "data",
             "medico",
@@ -2634,6 +2730,49 @@ base_isencao_minimo_df = (
 
 
 # ============================================================
+# Tratamento da base de presença sem exame
+# ============================================================
+
+base_presenca_df["medico"] = (
+    base_presenca_df["medico"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+)
+
+base_presenca_df["medico_normalizado"] = (
+    base_presenca_df["medico"]
+    .apply(normalizar_texto)
+)
+
+base_presenca_df["data_convertida"] = (
+    converter_coluna_data(
+        base_presenca_df["data"]
+    )
+)
+
+
+base_presenca_df = (
+    base_presenca_df.loc[
+        base_presenca_df[
+            "data_convertida"
+        ].notna()
+        & base_presenca_df[
+            "medico_normalizado"
+        ].ne("")
+    ]
+    .drop_duplicates(
+        subset=[
+            "data_convertida",
+            "medico_normalizado",
+        ],
+        keep="last",
+    )
+    .copy()
+)
+
+
+# ============================================================
 # Período padrão: mês atual
 # ============================================================
 
@@ -2731,7 +2870,8 @@ if medico_selecionado == TODOS_OS_MEDICOS:
         "Quando a opção Todos os médicos está selecionada, "
         "a página não mostra o resumo na tela. O botão abaixo "
         "gera um arquivo ZIP com um PDF por médico que possui "
-        "atendimento, auxílio ou sobreaviso no período, além de "
+        "atendimento, auxílio, sobreaviso ou presença sem exame "
+        "no período, além de "
         "uma planilha Excel de controle de pagamento com todos "
         "os médicos."
     )
@@ -2748,6 +2888,7 @@ if medico_selecionado == TODOS_OS_MEDICOS:
             base_sobreaviso_df=base_sobreaviso_df,
             base_meio_periodo_df=base_meio_periodo_df,
             base_isencao_minimo_df=base_isencao_minimo_df,
+            base_presenca_df=base_presenca_df,
         )
 
         if medico_tem_movimento(
@@ -2857,6 +2998,7 @@ dados_medico = calcular_dados_medico(
     base_sobreaviso_df=base_sobreaviso_df,
     base_meio_periodo_df=base_meio_periodo_df,
     base_isencao_minimo_df=base_isencao_minimo_df,
+    base_presenca_df=base_presenca_df,
 )
 
 
@@ -3030,6 +3172,12 @@ if dados_medico["quantidade_dias_valor_minimo"]:
         f"{quantidade_minimo_meio_periodo} de meio período "
         f"e {quantidade_minimo_periodo_completo} de período "
         "completo. O valor do auxílio não entra nesse cálculo."
+        + (
+            f" Dias de presença sem exame no período: "
+            f"{dados_medico['quantidade_dias_presenca_sem_exame']}."
+            if dados_medico["quantidade_dias_presenca_sem_exame"]
+            else ""
+        )
     )
 
 else:
