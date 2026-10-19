@@ -14,6 +14,7 @@ from auxiliar.google_sheets import (
 
 NOME_ABA_MEDICOS = "lista_medicos"
 NOME_ABA_PRESENCA = "base_presenca"
+NOME_ABA_MEIO_PERIODO = "base_meio_periodo"
 
 
 # ============================================================
@@ -58,20 +59,21 @@ def validar_colunas(
         )
 
 
-def presenca_ja_registrada(
-    base_presenca_df: pd.DataFrame,
-    data_presenca: date,
+def registro_ja_existe(
+    base_df: pd.DataFrame,
+    data_registro: date,
     medico: str,
 ) -> bool:
     """
-    Verifica se já existe presença registrada para o
-    médico na data informada.
+    Verifica se já existe registro do médico na data
+    informada em uma aba com as colunas data e medico
+    (base_presenca ou base_meio_periodo).
     """
-    if base_presenca_df.empty:
+    if base_df.empty:
         return False
 
     datas = pd.to_datetime(
-        base_presenca_df["data"]
+        base_df["data"]
         .fillna("")
         .astype(str)
         .str.strip(),
@@ -80,14 +82,14 @@ def presenca_ja_registrada(
     )
 
     medicos = (
-        base_presenca_df["medico"]
+        base_df["medico"]
         .fillna("")
         .apply(normalizar_texto)
     )
 
     return bool(
         (
-            datas.eq(pd.Timestamp(data_presenca))
+            datas.eq(pd.Timestamp(data_registro))
             & medicos.eq(normalizar_texto(medico))
         ).any()
     )
@@ -164,6 +166,14 @@ try:
             ],
         ).copy()
 
+        base_meio_periodo_df = get_or_create_sheet_data(
+            NOME_ABA_MEIO_PERIODO,
+            [
+                "data",
+                "medico",
+            ],
+        ).copy()
+
 except Exception as error:
     st.error(
         "Não foi possível carregar os dados das planilhas."
@@ -184,6 +194,12 @@ base_presenca_df.columns = (
     .str.strip()
 )
 
+base_meio_periodo_df.columns = (
+    base_meio_periodo_df.columns
+    .astype(str)
+    .str.strip()
+)
+
 
 try:
     validar_colunas(
@@ -195,6 +211,15 @@ try:
     validar_colunas(
         base_presenca_df,
         NOME_ABA_PRESENCA,
+        [
+            "data",
+            "medico",
+        ],
+    )
+
+    validar_colunas(
+        base_meio_periodo_df,
+        NOME_ABA_MEIO_PERIODO,
         [
             "data",
             "medico",
@@ -258,6 +283,16 @@ with st.container(border=True):
                 placeholder="Selecione um médico",
             )
 
+        meio_periodo = st.checkbox(
+            "Meio período",
+            help=(
+                "Marque se o médico trabalhou somente meio "
+                "período nesse dia. Ele receberá metade do "
+                "valor mínimo, e a data também será marcada "
+                "na tela Definir Meio de Período."
+            ),
+        )
+
         salvar_presenca = st.form_submit_button(
             "💾 Salvar presença",
             type="primary",
@@ -275,7 +310,7 @@ if salvar_presenca:
             "Selecione um médico antes de salvar."
         )
 
-    elif presenca_ja_registrada(
+    elif registro_ja_existe(
         base_presenca_df,
         data_presenca,
         medico_selecionado,
@@ -304,12 +339,30 @@ if salvar_presenca:
                     [nova_linha],
                 )
 
+                # base_meio_periodo tem a mesma estrutura
+                # (data, medico). Evita duplicar a data caso
+                # ela já tenha sido marcada antes.
+                if meio_periodo and not registro_ja_existe(
+                    base_meio_periodo_df,
+                    data_presenca,
+                    medico_selecionado,
+                ):
+                    append_sheet_data(
+                        NOME_ABA_MEIO_PERIODO,
+                        [nova_linha],
+                    )
+
             st.session_state[
                 "mensagem_sucesso_presenca"
             ] = (
                 f"Presença sem exame de {medico_selecionado} "
-                f"em {data_presenca.strftime('%d/%m/%Y')} "
-                "salva com sucesso."
+                f"em {data_presenca.strftime('%d/%m/%Y')}"
+                + (
+                    ", em meio período,"
+                    if meio_periodo
+                    else ""
+                )
+                + " salva com sucesso."
             )
 
             st.session_state[
