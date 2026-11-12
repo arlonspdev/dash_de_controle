@@ -19,14 +19,11 @@
     ao salvar) e Configuração > Base de dados (ao salvar).
   - Linha zerada sem ID herda o ID do exame com mesma data + atendimento +
     nome do exame; se não houver, vira exame próprio.
-  - Dados antigos preenchidos em 12/11/2026 (1.521 linhas). Backup na aba
-    `base_dados_backup_2026-11-12`. Totais conferidos: jun 359, jul 374,
-    ago 405, set 353 (iguais à regra antiga).
+  - Dados antigos preenchidos em 12/11/2026 (1.521 linhas). Totais
+    conferidos: jun 359, jul 374, ago 405, set 353 (iguais à regra antiga).
+    O backup da aba foi apagado depois da conferência.
 
-## Pendente
-- Linha 137 da `base_dados` (Colonoscopia de junho/2026 com valor do exame e
-  sem taxa do aparelho): conferir se é exame real ou erro de lançamento.
-  Conta como exame nas duas regras.
-- Este repositório é público: não colocar aqui nº de atendimento, nome de
-  paciente ou outros dados reais.
-- Apagar a aba `base_dados_backup_2026-11-12` quando tudo estiver ok.
+## Observações
+- Este repositório é público (precisa ser, por causa do Streamlit Cloud):
+  não colocar aqui nº de atendimento, nome de paciente ou outros dados reais.
+  Segredos ficam só no Streamlit Secrets / `.env` / `credentials/`.
