@@ -223,3 +223,6 @@ credentials/
 
 # Local project notes for Claude Code (not shared with the team)
 CLAUDE.md
+
+# Arquivos gerados pelos testes (contêm dados de pacientes)
+testes/*/

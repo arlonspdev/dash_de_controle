@@ -1260,9 +1260,20 @@ def gerar_pdf_relatorio(
         )
     )
 
+    # Um exame com vários procedimentos ocupa várias linhas, mas
+    # só a primeira recebe o valor do exame e a taxa do aparelho
+    # (as demais ficam zeradas). Por isso, conta como exame
+    # apenas a linha que carrega algum desses valores.
+    total_exames = int(
+        (
+            tabela_df["Valor do exame"].fillna(0).gt(0)
+            | tabela_df["Taxa do aparelho"].fillna(0).gt(0)
+        ).sum()
+    )
+
     elementos.append(
         Paragraph(
-            f"Total de linhas: {len(tabela_df)}",
+            f"Total de exames: {total_exames}",
             estilo_subtitulo,
         )
     )
