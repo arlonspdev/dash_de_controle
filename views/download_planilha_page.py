@@ -25,6 +25,11 @@ from auxiliar.google_sheets import (
     get_sheet_data,
     set_sheet_data,
 )
+from auxiliar.id_exame import (
+    COLUNA_ID_EXAME,
+    contar_exames,
+    preencher_ids_exame,
+)
 
 
 NOME_ABA_BASE_DADOS = "base_dados"
@@ -64,6 +69,9 @@ COLUNAS_BASE_DADOS_EDITAVEL = [
     "valor_medico",
     "medico_auxiliar",
     "valor_auxilio",
+    # Fica oculta no editor, mas precisa ser preservada ao salvar
+    # (a aba é regravada só com as colunas desta lista).
+    COLUNA_ID_EXAME,
 ]
 
 
@@ -80,6 +88,7 @@ COLUNAS_BONITAS_EDITOR = {
     "valor_medico": "Valor médico",
     "medico_auxiliar": "Médico auxiliar",
     "valor_auxilio": "Valor auxílio",
+    COLUNA_ID_EXAME: "ID do exame",
 }
 
 COLUNAS_BONITAS_EDITOR_INVERSO = {
@@ -624,6 +633,7 @@ def abrir_dialogo_editar_base_dados(
         "nome_medico",
         "nome_exame",
         "medico_auxiliar",
+        COLUNA_ID_EXAME,
     ]:
         tabela_editor_df[coluna] = (
             tabela_editor_df[coluna]
@@ -751,6 +761,9 @@ def abrir_dialogo_editar_base_dados(
                     step=0.01,
                 )
             ),
+            # Oculta: é gerada automaticamente e não deve ser
+            # editada. Linhas novas recebem o ID ao salvar.
+            "ID do exame": None,
         },
         key="editor_base_dados_completa",
     )
@@ -809,6 +822,7 @@ def abrir_dialogo_editar_base_dados(
         "nome_medico",
         "nome_exame",
         "medico_auxiliar",
+        COLUNA_ID_EXAME,
     ]:
         tabela_para_salvar_df[coluna] = (
             tabela_para_salvar_df[coluna]
@@ -860,6 +874,11 @@ def abrir_dialogo_editar_base_dados(
             ]
         )
         .reset_index(drop=True)
+    )
+
+    # Linhas novas (ou ainda sem ID) recebem o id_exame aqui.
+    base_final_df = preencher_ids_exame(
+        base_final_df
     )
 
     try:
@@ -967,6 +986,7 @@ def gerar_pdf_relatorio(
     tabela_df: pd.DataFrame,
     data_inicial: date,
     data_final: date,
+    total_exames: int,
 ) -> bytes:
     """
     Gera um PDF em memória com cabeçalho e tabela.
@@ -1258,17 +1278,6 @@ def gerar_pdf_relatorio(
             1,
             0.25 * cm,
         )
-    )
-
-    # Um exame com vários procedimentos ocupa várias linhas, mas
-    # só a primeira recebe o valor do exame e a taxa do aparelho
-    # (as demais ficam zeradas). Por isso, conta como exame
-    # apenas a linha que carrega algum desses valores.
-    total_exames = int(
-        (
-            tabela_df["Valor do exame"].fillna(0).gt(0)
-            | tabela_df["Taxa do aparelho"].fillna(0).gt(0)
-        ).sum()
     )
 
     elementos.append(
@@ -1625,6 +1634,7 @@ if tabela_relatorio_df.empty:
 else:
     pdf_bytes = gerar_pdf_relatorio(
         tabela_df=tabela_relatorio_df,
+        total_exames=contar_exames(base_filtrada_df),
         data_inicial=data_inicial,
         data_final=data_final,
     )

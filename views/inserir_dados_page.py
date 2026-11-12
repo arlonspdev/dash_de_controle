@@ -9,6 +9,7 @@ from auxiliar.google_sheets import (
     append_sheet_data,
     get_sheet_data,
 )
+from auxiliar.id_exame import gerar_id_exame
 
 
 NOME_ABA_EXAMES = "lista_exames"
@@ -1180,6 +1181,10 @@ if salvar_dados:
     novas_linhas = []
 
     for item in itens_exames:
+        # Todas as linhas do mesmo exame (uma por procedimento)
+        # compartilham o mesmo ID.
+        id_exame_item = gerar_id_exame()
+
         # Quando não houver procedimento, cria uma única
         # linha para o exame com a coluna vazia.
         procedimentos_do_exame = (
@@ -1260,6 +1265,7 @@ if salvar_dados:
             # valor_medico
             # medico_auxiliar
             # valor_auxilio
+            # id_exame
 
             nova_linha = [
                 data_atendimento.strftime(
@@ -1276,6 +1282,7 @@ if salvar_dados:
                 valor_medico_linha,
                 medico_auxiliar_linha,
                 valor_auxilio_linha,
+                id_exame_item,
             ]
 
             novas_linhas.append(

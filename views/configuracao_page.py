@@ -9,6 +9,7 @@ from auxiliar.google_sheets import (
     get_sheet_data,
     set_sheet_data,
 )
+from auxiliar.id_exame import preencher_ids_exame
 
 
 URL_PLANILHA = (
@@ -844,6 +845,15 @@ if salvar_alteracoes:
             )
 
             bloquear_salvamento = True
+
+    if (
+        not bloquear_salvamento
+        and nome_aba == "base_dados"
+    ):
+        # Linhas novas (ou ainda sem ID) recebem o id_exame.
+        dataframe_para_salvar = preencher_ids_exame(
+            dataframe_para_salvar
+        )
 
     if not bloquear_salvamento:
         try:

@@ -10,20 +10,21 @@
   Uso: `python testes/gerar_pdfs_teste.py 2026 9`. Os PDFs gerados ficam fora
   do git (têm dados de pacientes).
 
-## Próximo passo em discussão: ID único por exame
-Coluna nova `id_exame` na `base_dados`, repetida nas linhas de procedimento do
-mesmo exame. Total de exames = quantidade de IDs distintos.
+- ID único por exame (`auxiliar/id_exame.py`): coluna `id_exame` (coluna M
+  da `base_dados`), formato `EX-` + 12 hex, repetida nas linhas de
+  procedimento do mesmo exame. Total de exames = IDs distintos; linhas sem ID
+  (digitadas direto no Sheets) contam pela regra valor/taxa > 0.
+  - Gerado em: Inserir Atendimentos (1 ID por exame), editor "Editar dados"
+    do Download de Dados (coluna oculta, preservada; linhas novas recebem ID
+    ao salvar) e Configuração > Base de dados (ao salvar).
+  - Linha zerada sem ID herda o ID do exame com mesma data + atendimento +
+    nome do exame; se não houver, vira exame próprio.
+  - Dados antigos preenchidos em 12/11/2026 (1.521 linhas). Backup na aba
+    `base_dados_backup_2026-11-12`. Totais conferidos: jun 359, jul 374,
+    ago 405, set 353 (iguais à regra antiga).
 
-Cuidados:
-1. A tela de edição em "Download de Dados" regrava a aba com a lista fixa
-   `COLUNAS_BASE_DADOS_EDITAVEL` — incluir `id_exame` nela, senão os IDs somem.
-2. Linhas criadas fora de "Inserir Atendimentos" (tela de configuração ou
-   digitação direta no Sheets) ficam sem ID — gerar lá também e manter a regra
-   valor/taxa como reserva no relatório.
-3. Dados antigos (1.521 linhas): backup da aba, preencher IDs uma vez com a
-   regra valor/taxa, conferir que o total de exames por mês não mudou
-   (jun 359, jul 374, ago 405, set 353).
-4. Linha 137 (10/06/2026, atendimento 55163967, Colonoscopia R$ 700 sem taxa):
-   conferir se é exame real ou erro de lançamento.
-
-Ordem sugerida: backup -> código -> teste local -> preencher antigos -> conferir.
+## Pendente
+- Linha 137 (10/06/2026, atendimento 55163967, Colonoscopia R$ 700 sem taxa):
+  conferir se é exame real ou erro de lançamento. Conta como exame nas duas
+  regras.
+- Apagar a aba `base_dados_backup_2026-11-12` quando tudo estiver ok.
