@@ -24,7 +24,9 @@
     ago 405, set 353 (iguais à regra antiga).
 
 ## Pendente
-- Linha 137 (10/06/2026, atendimento 55163967, Colonoscopia R$ 700 sem taxa):
-  conferir se é exame real ou erro de lançamento. Conta como exame nas duas
-  regras.
+- Linha 137 da `base_dados` (Colonoscopia de junho/2026 com valor do exame e
+  sem taxa do aparelho): conferir se é exame real ou erro de lançamento.
+  Conta como exame nas duas regras.
+- Este repositório é público: não colocar aqui nº de atendimento, nome de
+  paciente ou outros dados reais.
 - Apagar a aba `base_dados_backup_2026-11-12` quando tudo estiver ok.

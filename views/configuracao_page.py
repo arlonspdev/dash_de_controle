@@ -6,18 +6,19 @@ import streamlit as st
 
 from auxiliar.google_sheets import (
     get_or_create_sheet_data,
+    get_setting,
     get_sheet_data,
+    get_spreadsheet_url,
     set_sheet_data,
 )
 from auxiliar.id_exame import preencher_ids_exame
 
 
-URL_PLANILHA = (
-    "https://docs.google.com/spreadsheets/d/"
-    "17xaXorvF3eyiPKU-4SkWGL2WW8rBB2cmRTrr_PJdCNk/"
-)
+# O link e o e-mail vêm do Streamlit Secrets (SPREADSHEET_ID e
+# EMAIL_EDICAO_PLANILHA) para não ficarem expostos no repositório.
+URL_PLANILHA = get_spreadsheet_url()
 
-EMAIL_EDICAO_PLANILHA = "arlonspdev@gmail.com"
+EMAIL_EDICAO_PLANILHA = get_setting("EMAIL_EDICAO_PLANILHA")
 
 
 BASES_DISPONIVEIS = {
@@ -565,10 +566,17 @@ def exibir_dialogo_planilha() -> None:
             "#### Conta necessária para edição"
         )
 
-        st.markdown(
-            f"Você precisa estar conectado com o e-mail "
-            f"**{EMAIL_EDICAO_PLANILHA}**."
-        )
+        if EMAIL_EDICAO_PLANILHA:
+            st.markdown(
+                f"Você precisa estar conectado com o e-mail "
+                f"**{EMAIL_EDICAO_PLANILHA}**."
+            )
+
+        else:
+            st.markdown(
+                "Você precisa estar conectado com a conta do "
+                "Google que tem permissão de edição na planilha."
+            )
 
         st.caption(
             "Caso esteja conectado com outro e-mail, a planilha "
@@ -581,6 +589,13 @@ def exibir_dialogo_planilha() -> None:
         "ou a ordem das colunas. Essas mudanças podem impedir o "
         "funcionamento correto do sistema."
     )
+
+    if not URL_PLANILHA:
+        st.error(
+            "O link da planilha não está configurado "
+            "(SPREADSHEET_ID no Streamlit Secrets)."
+        )
+        return
 
     st.link_button(
         "🔗 Abrir planilha no Google Sheets",

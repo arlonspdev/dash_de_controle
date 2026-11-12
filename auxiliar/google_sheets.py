@@ -19,9 +19,9 @@ from gspread_dataframe import set_with_dataframe
 load_dotenv()
 
 
+# Só a API do Sheets é usada; não há necessidade de acesso ao Drive.
 GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
 ]
 
 
@@ -107,6 +107,32 @@ def create_client() -> gspread.Client:
     """
     credentials = get_credentials()
     return gspread.authorize(credentials)
+
+
+def get_setting(
+    setting_name: str,
+    default: Any = None,
+) -> Any:
+    """
+    Public access to a setting (Streamlit Secrets or environment).
+    """
+    return _get_setting(setting_name, default)
+
+
+def get_spreadsheet_url() -> str | None:
+    """
+    Return the Google Sheets URL of the default spreadsheet, built
+    from SPREADSHEET_ID so the ID is not hard-coded in the source.
+    """
+    spreadsheet_id = _get_setting("SPREADSHEET_ID")
+
+    if not spreadsheet_id:
+        return None
+
+    return (
+        "https://docs.google.com/spreadsheets/d/"
+        f"{spreadsheet_id}/"
+    )
 
 
 def _get_spreadsheet_id(

@@ -1,4 +1,6 @@
 import hmac
+import threading
+import time
 
 import streamlit as st
 
@@ -13,6 +15,60 @@ st.set_page_config(
 # ============================================================
 # Funções de login
 # ============================================================
+
+# Proteção contra tentativas repetidas de senha: depois de
+# MAX_TENTATIVAS erros dentro de JANELA_SEGUNDOS, o login fica
+# bloqueado por BLOQUEIO_SEGUNDOS. O controle é do servidor (vale
+# para todos os acessos), então abrir outra aba não zera a contagem.
+MAX_TENTATIVAS = 5
+JANELA_SEGUNDOS = 15 * 60
+BLOQUEIO_SEGUNDOS = 5 * 60
+
+
+@st.cache_resource
+def _controle_tentativas() -> dict:
+    return {
+        "lock": threading.Lock(),
+        "falhas": [],
+        "bloqueado_ate": 0.0,
+    }
+
+
+def segundos_de_bloqueio_restantes() -> int:
+    controle = _controle_tentativas()
+
+    with controle["lock"]:
+        return max(
+            0,
+            int(controle["bloqueado_ate"] - time.time()),
+        )
+
+
+def registrar_falha_login() -> None:
+    controle = _controle_tentativas()
+    agora = time.time()
+
+    with controle["lock"]:
+        controle["falhas"] = [
+            momento
+            for momento in controle["falhas"]
+            if agora - momento < JANELA_SEGUNDOS
+        ]
+        controle["falhas"].append(agora)
+
+        if len(controle["falhas"]) >= MAX_TENTATIVAS:
+            controle["bloqueado_ate"] = agora + BLOQUEIO_SEGUNDOS
+            controle["falhas"] = []
+
+    # Atrasa cada erro para dificultar tentativas em sequência.
+    time.sleep(1)
+
+
+def limpar_falhas_login() -> None:
+    controle = _controle_tentativas()
+
+    with controle["lock"]:
+        controle["falhas"] = []
 
 def validar_login(
     usuario_digitado: str,
@@ -97,7 +153,18 @@ def exibir_pagina_login() -> None:
                 )
 
             if entrar:
-                if validar_login(usuario, senha):
+                bloqueio = segundos_de_bloqueio_restantes()
+
+                if bloqueio:
+                    minutos = bloqueio // 60 + 1
+                    st.error(
+                        "Muitas tentativas incorretas. Tente "
+                        f"novamente em cerca de {minutos} minuto(s)."
+                    )
+
+                elif validar_login(usuario, senha):
+                    limpar_falhas_login()
+
                     st.session_state["autenticado"] = True
                     st.session_state["usuario_logado"] = (
                         usuario.strip()
@@ -106,6 +173,7 @@ def exibir_pagina_login() -> None:
                     st.rerun()
 
                 else:
+                    registrar_falha_login()
                     st.error("Usuário ou senha incorretos.")
 
 
